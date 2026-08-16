@@ -1,0 +1,10 @@
+fastapi==0.115.*
+uvicorn[standard]==0.30.*
+beanie==1.26.*
+motor==3.5.*
+openpyxl==3.1.*
+weasyprint==62.*
+pydyf==0.11.*
+jinja2==3.1.*
+python-multipart==0.0.*
+pydantic-settings==2.4.*
