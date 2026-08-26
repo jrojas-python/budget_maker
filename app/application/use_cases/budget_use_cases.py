@@ -37,17 +37,35 @@ class BudgetUseCases:
             if not product:
                 raise ValueError(f"Producto no encontrado: {item_req.sku}")
             line_total = product.cost * item_req.quantity
+
+            color_name = None
+            color_hex = None
+            if product.colors:
+                if item_req.color_hex:
+                    match = next((c for c in product.colors if c.hex.upper() == item_req.color_hex.upper()), None)
+                    if match:
+                        color_name, color_hex = match.name, match.hex
+                    else:
+                        color_name = product.colors[0].name
+                        color_hex = product.colors[0].hex
+                else:
+                    color_name = product.colors[0].name
+                    color_hex = product.colors[0].hex
+
             items.append(BudgetItem(
                 sku=product.sku,
                 name=product.name,
                 quantity=item_req.quantity,
                 unit_cost=product.cost,
                 line_total=line_total,
+                color_name=color_name,
+                color_hex=color_hex,
             ))
             subtotal += line_total
 
-        tax_config = await self._config_repo.get_by_key("porcentaje_impuesto")
-        tax_percent = float(tax_config.value) if tax_config else 18.0
+        config = await self._config_repo.get_effective_global_config()
+        tax_percent = float(config.tax_rate)
+        link_ttl_minutes = int(config.link_ttl_minutes)
         tax_amount = subtotal * (tax_percent / 100)
         total = subtotal + tax_amount
 
@@ -63,6 +81,7 @@ class BudgetUseCases:
             "tax_percent": tax_percent,
             "tax_amount": round(tax_amount, 2),
             "total": round(total, 2),
+            "link_ttl_minutes": link_ttl_minutes,
         }
         return await self._budget_repo.create(budget_data)
 
@@ -71,8 +90,7 @@ class BudgetUseCases:
 
     async def is_expired(self, budget: Budget) -> bool:
         """Verifica si el link del presupuesto ha expirado."""
-        config = await self._config_repo.get_by_key("tiempo_expiracion_link_minutos")
-        minutes = int(config.value) if config else 30
+        minutes = int(budget.link_ttl_minutes)
         now = datetime.now(timezone.utc)
         created = budget.created_at.replace(tzinfo=timezone.utc) if budget.created_at.tzinfo is None else budget.created_at
         elapsed = (now - created).total_seconds() / 60
@@ -96,7 +114,8 @@ class BudgetUseCases:
             f"*{total_lines} líneas · {total_units} unidades*",
         ]
         for item in budget.items:
-            lines.append(f"• {item.sku} · {item.name} · {item.quantity}x ${item.unit_cost:.2f}")
+            color_info = f" · {item.color_name} ({item.color_hex})" if item.color_name else ""
+            lines.append(f"• {item.sku} · {item.name}{color_info} · {item.quantity}x ${item.unit_cost:.2f}")
         lines.append("*TOTALES:*")
         lines.append(f"Subtotal: ${budget.subtotal:.2f}")
         lines.append(f"Total con impuestos: ${budget.total:.2f}")
