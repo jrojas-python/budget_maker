@@ -8,6 +8,7 @@ from app.domain.models.budget import BudgetItem, ClientInfo
 class BudgetItemCreate(BaseModel):
     sku: str
     quantity: int
+    color_hex: str | None = None
 
 
 class BudgetCreate(BaseModel):
@@ -24,4 +25,5 @@ class BudgetResponse(BaseModel):
     tax_percent: float
     tax_amount: float
     total: float
+    link_ttl_minutes: int
     created_at: datetime

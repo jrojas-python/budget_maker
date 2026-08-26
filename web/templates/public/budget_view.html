@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}Cotización {{ budget.code }}{% endblock %}
+{% block content %}
+<div class="budget">
+    <h1>COTIZACIÓN {{ budget.code }}</h1>
+    <p class="subtitle">BUDGET MAKER</p>
+
+    <div class="client-info">
+        <p><strong>Cliente:</strong> {{ budget.client_info.nombres }} {{ budget.client_info.apellidos }}</p>
+        <p><strong>Documento:</strong> {{ budget.client_info.documento }}</p>
+        <p><strong>Dirección:</strong> {{ budget.client_info.direccion }}</p>
+        <p><strong>Vendedor:</strong> {{ budget.client_info.vendedor }}</p>
+        <p><strong>Fecha:</strong> {{ budget.created_at.strftime('%d/%m/%Y') }}</p>
+    </div>
+
+    <table class="items-table">
+        <thead>
+            <tr>
+                <th>SKU</th>
+                <th>Producto</th>
+                <th>Color</th>
+                <th>Cant.</th>
+                <th>P. Unit.</th>
+                <th>Total</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in budget.items %}
+            <tr>
+                <td>{{ item.sku }}</td>
+                <td>{{ item.name }}</td>
+                <td>
+                    {% if item.color_hex %}
+                    <span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:{{ item.color_hex }};border:1px solid #ccc;vertical-align:middle"></span>
+                    {{ item.color_name }}
+                    {% else %}
+                    —
+                    {% endif %}
+                </td>
+                <td>{{ item.quantity }}</td>
+                <td>${{ "%.2f"|format(item.unit_cost) }}</td>
+                <td>${{ "%.2f"|format(item.line_total) }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <div class="totals">
+        <p>Subtotal: <strong>${{ "%.2f"|format(budget.subtotal) }}</strong></p>
+        <p>Impuesto ({{ budget.tax_percent }}%): <strong>${{ "%.2f"|format(budget.tax_amount) }}</strong></p>
+        <p class="grand-total">Total: <strong>${{ "%.2f"|format(budget.total) }}</strong></p>
+    </div>
+
+    <div class="actions">
+        <a href="/presupuesto/{{ budget.uuid }}/pdf" class="btn btn-pdf">📄 Descargar PDF</a>
+        <a href="{{ whatsapp_url }}" target="_blank" class="btn btn-whatsapp">💬 Compartir por WhatsApp</a>
+    </div>
+</div>
+{% endblock %}

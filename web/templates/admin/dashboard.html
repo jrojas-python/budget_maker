@@ -1,0 +1,216 @@
+{% extends "base.html" %}
+{% block title %}Admin — Budget Maker{% endblock %}
+{% block container_class %}wide{% endblock %}
+{% block content %}
+<div class="admin-layout">
+    <div class="admin-tabs">
+        <button class="tab-btn active" data-tab="products">Productos</button>
+        <button class="tab-btn" data-tab="categories">Categorías</button>
+        <button class="tab-btn" data-tab="users">Usuarios</button>
+        <button class="tab-btn" data-tab="config">Configuración</button>
+        <button class="tab-btn" data-tab="import">Importar Excel</button>
+    </div>
+
+    <!-- Tab: Productos -->
+    <div id="tab-products" class="tab-content active">
+        <div class="section-header">
+            <h2>Gestión de Productos</h2>
+            <button class="btn btn-primary" onclick="showProductForm()">+ Nuevo Producto</button>
+        </div>
+
+        <div id="product-form" class="form-card hidden">
+            <h3 id="form-title">Nuevo Producto</h3>
+            <input type="hidden" id="product-edit-id">
+            <div class="form-grid">
+                <div class="form-group">
+                    <label>Nombre</label>
+                    <input type="text" id="p-name" placeholder="Nombre del producto">
+                </div>
+                <div class="form-group">
+                    <label>SKU</label>
+                    <input type="text" id="p-sku" placeholder="SKU-001">
+                </div>
+                <div class="form-group">
+                    <label>Costo</label>
+                    <input type="number" id="p-cost" step="0.01" placeholder="0.00">
+                </div>
+                <div class="form-group">
+                    <label>Unidad</label>
+                    <input type="text" id="p-unit" value="unidad">
+                </div>
+                <div class="form-group">
+                    <label>Moneda</label>
+                    <input type="text" id="p-currency" value="USD">
+                </div>
+                <div class="form-group">
+                    <label>Marca</label>
+                    <input type="text" id="p-brand" placeholder="Marca del producto">
+                </div>
+                <div class="form-group" style="grid-column: 1 / -1;">
+                    <label>Descripción</label>
+                    <textarea id="p-description" rows="3" placeholder="Descripción del producto"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Imagen</label>
+                    <div id="image-area">
+                        <input type="file" id="p-image" accept="image/png,image/jpeg,image/webp">
+                    </div>
+                </div>
+            </div>
+            <div class="form-group" style="margin-bottom: 1rem;">
+                <label>Categorías</label>
+                <div id="category-checkboxes" class="checkbox-group"></div>
+            </div>
+            <div class="form-group" style="margin-bottom: 1rem;">
+                <label>Colores <span class="hint">(máx. 6)</span></label>
+                <div id="color-list" class="color-list"></div>
+                <div class="color-add-row">
+                    <input type="text" id="color-name-input" placeholder="Nombre (ej: Rojo)" style="width:120px">
+                    <input type="color" id="color-hex-input" value="#3498DB" style="width:50px;height:32px;padding:2px;cursor:pointer">
+                    <button type="button" class="btn-sm btn-edit" onclick="addColor()">+ Agregar</button>
+                </div>
+            </div>
+            <div class="form-actions">
+                <button class="btn btn-primary" onclick="saveProduct()">Guardar</button>
+                <button class="btn btn-secondary" onclick="hideProductForm()">Cancelar</button>
+            </div>
+        </div>
+
+        <table class="items-table" id="products-table">
+            <thead>
+                <tr>
+                    <th>Img</th>
+                    <th>SKU</th>
+                    <th>Nombre</th>
+                    <th>Marca</th>
+                    <th>Categorías</th>
+                    <th>Colores</th>
+                    <th>Costo</th>
+                    <th>Unidad</th>
+                    <th>Moneda</th>
+                    <th>Acciones</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+
+    <!-- Tab: Categorías -->
+    <div id="tab-categories" class="tab-content">
+        <div class="section-header">
+            <h2>Gestión de Categorías</h2>
+            <button class="btn btn-primary" onclick="showCategoryForm()">+ Nueva Categoría</button>
+        </div>
+
+        <div id="category-form" class="form-card hidden">
+            <h3 id="cat-form-title">Nueva Categoría</h3>
+            <input type="hidden" id="cat-edit-id">
+            <div class="form-grid">
+                <div class="form-group">
+                    <label>Nombre</label>
+                    <input type="text" id="cat-name" placeholder="Nombre de la categoría">
+                </div>
+                <div class="form-group">
+                    <label>Descripción</label>
+                    <input type="text" id="cat-description" placeholder="Descripción (opcional)">
+                </div>
+            </div>
+            <label class="checkbox-label">
+                <input type="checkbox" id="cat-active" checked> Activa
+            </label>
+            <div class="form-actions" style="margin-top: 0.75rem;">
+                <button class="btn btn-primary" onclick="saveCategory()">Guardar</button>
+                <button class="btn btn-secondary" onclick="hideCategoryForm()">Cancelar</button>
+            </div>
+        </div>
+
+        <table class="items-table" id="categories-table">
+            <thead>
+                <tr><th>Nombre</th><th>Slug</th><th>Descripción</th><th>Activa</th><th>Acciones</th></tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+
+    <!-- Tab: Usuarios -->
+    <div id="tab-users" class="tab-content">
+        <div class="section-header">
+            <h2>Gestión de Usuarios</h2>
+            <button class="btn btn-primary" onclick="showUserForm()">+ Nuevo Usuario</button>
+        </div>
+
+        <div id="user-form" class="form-card hidden">
+            <h3>Nuevo Usuario</h3>
+            <div class="form-grid">
+                <div class="form-group">
+                    <label>Username</label>
+                    <input type="text" id="u-username" placeholder="usuario">
+                </div>
+                <div class="form-group">
+                    <label>Email</label>
+                    <input type="email" id="u-email" placeholder="email@example.com">
+                </div>
+                <div class="form-group">
+                    <label>Contraseña</label>
+                    <input type="password" id="u-password" placeholder="••••••••">
+                </div>
+            </div>
+            <div class="form-actions">
+                <button class="btn btn-primary" onclick="saveUser()">Guardar</button>
+                <button class="btn btn-secondary" onclick="hideUserForm()">Cancelar</button>
+            </div>
+        </div>
+
+        <table class="items-table" id="users-table">
+            <thead>
+                <tr><th>Username</th><th>Email</th><th>Rol</th><th>Activo</th><th>Acciones</th></tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+
+    <!-- Tab: Configuración -->
+    <div id="tab-config" class="tab-content">
+        <h2>Configuración Global</h2>
+        <div id="config-list" class="config-cards"></div>
+
+        <h2 style="margin-top:2rem">Branding del Sitio</h2>
+        <div class="config-cards" id="branding-section">
+            <div class="config-card">
+                <div class="config-info"><strong>Logo del sitio</strong><span class="config-desc">Imagen mostrada en el navbar y catálogo</span></div>
+                <div class="config-edit">
+                    <img id="branding-logo-preview" src="" alt="Logo" style="max-height:40px;display:none;margin-right:8px">
+                    <input type="file" id="branding-logo-file" accept="image/*">
+                    <button class="btn-sm btn-edit" onclick="uploadBranding('site_logo')">Subir</button>
+                    <button class="btn-sm btn-delete" onclick="deleteBranding('site_logo')">Eliminar</button>
+                </div>
+            </div>
+            <div class="config-card">
+                <div class="config-info"><strong>Icono del sitio (favicon)</strong><span class="config-desc">Icono mostrado en la pestaña del navegador</span></div>
+                <div class="config-edit">
+                    <img id="branding-icon-preview" src="" alt="Icono" style="max-height:32px;display:none;margin-right:8px">
+                    <input type="file" id="branding-icon-file" accept="image/*,.ico">
+                    <button class="btn-sm btn-edit" onclick="uploadBranding('site_icon')">Subir</button>
+                    <button class="btn-sm btn-delete" onclick="deleteBranding('site_icon')">Eliminar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tab: Importar -->
+    <div id="tab-import" class="tab-content">
+        <h2>Importar Productos desde Excel</h2>
+        <p class="hint">Sube un archivo <code>.xlsx</code> con columnas: <strong>nombre, sku, costo, unidad, moneda</strong> (opcional: <strong>colores</strong> con formato <code>Nombre:#HEX,Nombre:#HEX</code>)</p>
+        <div class="upload-area">
+            <input type="file" id="excel-file" accept=".xlsx" onchange="handleFileSelect()">
+            <p>Arrastra un archivo .xlsx o haz clic para seleccionar</p>
+        </div>
+        <button class="btn btn-primary" id="import-btn" onclick="importExcel()" disabled>Importar</button>
+        <div id="import-result" class="hidden"></div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/admin.js"></script>
+{% endblock %}

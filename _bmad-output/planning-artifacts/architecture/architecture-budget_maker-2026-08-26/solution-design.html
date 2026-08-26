@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Diseño de Solución — Budget Maker API</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 40px 20px;
+            background-color: #f8f9fa;
+        }
+        h1, h2, h3 {
+            color: #1a202c;
+            border-bottom: 1px solid #e2e8f0;
+            padding-bottom: 8px;
+        }
+        h1 {
+            font-size: 2.5rem;
+            margin-bottom: 5px;
+            border-bottom: 2px solid #3182ce;
+        }
+        .subtitle {
+            font-size: 1.2rem;
+            color: #718096;
+            margin-bottom: 40px;
+        }
+        .card {
+            background: #fff;
+            padding: 25px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            margin-bottom: 30px;
+        }
+        .tag {
+            display: inline-block;
+            background-color: #ebf8ff;
+            color: #2b6cb0;
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-size: 0.85rem;
+            font-weight: bold;
+        }
+        pre {
+            background-color: #edf2f7;
+            padding: 15px;
+            border-radius: 6px;
+            overflow-x: auto;
+            font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace;
+            font-size: 0.9rem;
+        }
+        code {
+            font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace;
+            background-color: #edf2f7;
+            padding: 2px 6px;
+            border-radius: 4px;
+            color: #2d3748;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        th, td {
+            text-align: left;
+            padding: 12px;
+            border-bottom: 1px solid #e2e8f0;
+        }
+        th {
+            background-color: #f7fafc;
+            color: #4a5568;
+        }
+        .badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: bold;
+        }
+        .badge-success { background-color: #c6f6d5; color: #22543d; }
+        .badge-info { background-color: #e2e8f0; color: #4a5568; }
+        .badge-warning { background-color: #feebc8; color: #744210; }
+    </style>
+</head>
+<body>
+
+    <h1>Diseño de Solución</h1>
+    <div class="subtitle">Budget Maker API — Fase de Lanzamiento</div>
+
+    <div class="card">
+        <h2>1. Resumen de la Arquitectura</h2>
+        <p>El backend está diseñado como una <strong>API RESTful asíncrona</strong> implementada con Python 3.11+ y FastAPI. La persistencia de datos se gestiona en MongoDB a través del mapeador de documentos asíncrono <strong>Beanie ODM</strong> (basado en el driver asíncrono Motor).</p>
+        <p>El código está estructurado bajo las reglas de <strong>Clean Architecture</strong>, aislando las reglas de negocio del framework y los mecanismos de persistencia.</p>
+        
+        <h3>Organización de Directorios</h3>
+        <ul>
+            <li><code>app/domain/</code>: Contiene los modelos de Beanie y esquemas de validación de Pydantic.</li>
+            <li><code>app/application/use_cases/</code>: Orquesta la lógica del negocio. Es donde ocurren los cálculos de costos de presupuestos y la importación de Excel.</li>
+            <li><code>app/infrastructure/</code>: Implementa el acceso a datos (repositorios de MongoDB) y adaptadores para la generación de PDF (WeasyPrint).</li>
+            <li><code>app/api/</code>: Controladores REST y routers que exponen los endpoints al frontend desacoplado.</li>
+        </ul>
+    </div>
+
+    <div class="card">
+        <h2>2. Flujo de Datos y Conexión de Capas</h2>
+        <p>Para asegurar el desacoplamiento, la capa de presentación (routers de FastAPI) no interactúa directamente con los modelos de MongoDB. El flujo sigue el siguiente patrón:</p>
+        <pre>Request HTTP ──> FastAPI Router ──> UseCase (Inyectado) ──> Repository ──> Beanie (MongoDB)</pre>
+        <p>La inyección de dependencias se realiza mediante la utilidad <code>Depends</code> de FastAPI en <code>app/api/dependencies.py</code>.</p>
+    </div>
+
+    <div class="card">
+        <h2>3. Detalle de Diseño por Característica (v1)</h2>
+        
+        <h3>3.1 Configuración Global Unificada (AD-1)</h3>
+        <p>Se rediseña la colección <code>global_config</code> para almacenar un único documento fuertemente tipado en base de datos. Esto simplifica las lecturas en memoria y la coherencia del tipado:</p>
+        <pre>
+class GlobalConfig(Document):
+    tax_rate: float
+    link_ttl_minutes: int
+    show_product_photos_in_pdf: bool
+    company_name: str
+    company_subtitle: str
+    company_logo_path: str | None
+    payment_methods: list[str]
+        </pre>
+
+        <h3>3.2 Carga de Imágenes de Productos (AD-3)</h3>
+        <p>Para evitar saturar la base de datos con binarios o codificación Base64, se adopta el almacenamiento local en un volumen montado de Docker:</p>
+        <ol>
+            <li>El frontend envía la imagen al endpoint <code>POST /api/v1/media/upload</code>.</li>
+            <li>El backend valida que sea PNG o JPG, la escribe en la carpeta física <code>/uploads</code> y retorna la ruta relativa <code>/uploads/nombre_archivo.png</code>.</li>
+            <li>Al crear o editar el producto, el backend guarda esta ruta relativa dentro del campo <code>images: list[str]</code> de MongoDB.</li>
+        </ol>
+
+        <h3>3.3 Buscador Parcial e Importación de Tags (AD-2)</h3>
+        <p>El buscador realiza consultas con expresiones regulares (<code>$regex</code>) e ignore-case de MongoDB sobre el SKU, nombre y tags de productos. Para las etiquetas importadas desde Excel, se procesará una columna separada por comas y se transformará en lista de strings antes de guardarse.</p>
+    </div>
+
+    <div class="card">
+        <h2>4. Generación de PDFs con WeasyPrint</h2>
+        <p>El renderizador de PDF compila plantillas HTML escritas en Jinja2. Las directivas de estilo aplicadas garantizan lo siguiente:</p>
+        <ul>
+            <li>El membrete se muestra en la cabecera de todas las páginas de manera repetitiva mediante la regla CSS de WeasyPrint: <code>@page { @top-center { content: flow(header_membrete); } }</code>.</li>
+            <li>La altura del membrete está acotada al <strong>15% de la página</strong> para resguardar la consistencia de la presentación.</li>
+            <li>Las imágenes se cargan dinámicamente desde el sistema de archivos local de `/uploads` y se ocultan/muestran de forma fluida reajustando la grilla CSS de la tabla del presupuesto según la configuración del administrador.</li>
+        </ul>
+    </div>
+
+</body>
+</html>

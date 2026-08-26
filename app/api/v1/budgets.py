@@ -14,14 +14,17 @@ async def list_budgets(uc: BudgetUseCases = Depends(get_budget_use_cases)):
         BudgetResponse(
             code=b.code, uuid=b.uuid, client_info=b.client_info,
             items=b.items, subtotal=b.subtotal, tax_percent=b.tax_percent,
-            tax_amount=b.tax_amount, total=b.total, created_at=b.created_at,
+            tax_amount=b.tax_amount, total=b.total, link_ttl_minutes=b.link_ttl_minutes, created_at=b.created_at,
         )
         for b in budgets
     ]
 
 
 @router.post("/", response_model=BudgetResponse, status_code=201)
-async def create_budget(body: BudgetCreate, uc: BudgetUseCases = Depends(get_budget_use_cases)):
+async def create_budget(
+    body: BudgetCreate,
+    uc: BudgetUseCases = Depends(get_budget_use_cases),
+):
     try:
         budget = await uc.create_budget(body)
     except ValueError as e:
@@ -29,7 +32,7 @@ async def create_budget(body: BudgetCreate, uc: BudgetUseCases = Depends(get_bud
     return BudgetResponse(
         code=budget.code, uuid=budget.uuid, client_info=budget.client_info,
         items=budget.items, subtotal=budget.subtotal, tax_percent=budget.tax_percent,
-        tax_amount=budget.tax_amount, total=budget.total, created_at=budget.created_at,
+        tax_amount=budget.tax_amount, total=budget.total, link_ttl_minutes=budget.link_ttl_minutes, created_at=budget.created_at,
     )
 
 
@@ -41,5 +44,5 @@ async def get_budget(uuid: str, uc: BudgetUseCases = Depends(get_budget_use_case
     return BudgetResponse(
         code=budget.code, uuid=budget.uuid, client_info=budget.client_info,
         items=budget.items, subtotal=budget.subtotal, tax_percent=budget.tax_percent,
-        tax_amount=budget.tax_amount, total=budget.total, created_at=budget.created_at,
+        tax_amount=budget.tax_amount, total=budget.total, link_ttl_minutes=budget.link_ttl_minutes, created_at=budget.created_at,
     )

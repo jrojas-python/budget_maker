@@ -24,6 +24,8 @@ class BudgetItem(BaseModel):
     quantity: int
     unit_cost: float
     line_total: float = 0.0
+    color_name: str | None = None
+    color_hex: str | None = None
 
 
 class Budget(Document):
@@ -37,6 +39,7 @@ class Budget(Document):
     tax_percent: float = 0.0
     tax_amount: float = 0.0
     total: float = 0.0
+    link_ttl_minutes: int = 30
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     class Settings:

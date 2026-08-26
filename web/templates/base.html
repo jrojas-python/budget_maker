@@ -4,19 +4,52 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Budget Maker{% endblock %}</title>
+    <link rel="icon" id="dynamic-favicon" href="/static/favicon.ico" type="image/x-icon">
     <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
+    {% block navbar %}
     <nav class="navbar">
-        <a href="/" class="nav-brand">Budget Maker</a>
+        <a href="/" class="nav-brand">
+            <img id="nav-logo" src="" alt="" style="display:none;max-height:36px;margin-right:8px;vertical-align:middle">
+            <span id="nav-brand-text">Budget Maker</span>
+        </a>
         <div class="nav-links">
             <a href="/">Catálogo</a>
-            <a href="/admin">Admin</a>
+            <a href="/admin/login">Admin</a>
         </div>
     </nav>
+    {% endblock %}
     <div class="container {% block container_class %}{% endblock %}">
         {% block content %}{% endblock %}
     </div>
+    <div id="toast" class="toast hidden"></div>
+    <script src="/static/js/api.js"></script>
+    <script src="/static/js/auth.js"></script>
+    <script>
+    (async function loadBranding() {
+        try {
+            const res = await fetch('/api/v1/config/');
+            if (!res.ok) return;
+            const configs = await res.json();
+            const map = {};
+            configs.forEach(c => map[c.key] = c.value);
+            if (map.site_title) {
+                const el = document.getElementById('nav-brand-text');
+                if (el) el.textContent = map.site_title;
+                document.title = map.site_title;
+            }
+            if (map.site_logo) {
+                const img = document.getElementById('nav-logo');
+                if (img) { img.src = map.site_logo; img.style.display = 'inline'; }
+            }
+            if (map.site_icon) {
+                const fav = document.getElementById('dynamic-favicon');
+                if (fav) fav.href = map.site_icon;
+            }
+        } catch(e) {}
+    })();
+    </script>
     {% block scripts %}{% endblock %}
 </body>
 </html>

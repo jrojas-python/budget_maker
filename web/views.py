@@ -16,12 +16,17 @@ templates = Jinja2Templates(directory="web/templates")
 
 @router.get("/", response_class=HTMLResponse)
 async def home(request: Request):
-    return templates.TemplateResponse("catalog.html", {"request": request})
+    return templates.TemplateResponse("public/catalog.html", {"request": request})
+
+
+@router.get("/admin/login", response_class=HTMLResponse)
+async def admin_login(request: Request):
+    return templates.TemplateResponse("admin/login.html", {"request": request})
 
 
 @router.get("/admin", response_class=HTMLResponse)
 async def admin(request: Request):
-    return templates.TemplateResponse("admin.html", {"request": request})
+    return templates.TemplateResponse("admin/dashboard.html", {"request": request})
 
 
 @router.get("/presupuesto/{uuid}", response_class=HTMLResponse)
@@ -32,10 +37,10 @@ async def view_budget(uuid: str, request: Request, uc: BudgetUseCases = Depends(
         raise HTTPException(status_code=404, detail="Presupuesto no encontrado")
 
     if await uc.is_expired(budget):
-        return templates.TemplateResponse("budget_expired.html", {"request": request, "code": budget.code})
+        return templates.TemplateResponse("public/budget_expired.html", {"request": request, "code": budget.code})
 
     whatsapp_url = uc.generate_whatsapp_text(budget)
-    return templates.TemplateResponse("budget_view.html", {
+    return templates.TemplateResponse("public/budget_view.html", {
         "request": request,
         "budget": budget,
         "whatsapp_url": whatsapp_url,
@@ -50,7 +55,7 @@ async def download_budget_pdf(uuid: str, request: Request, uc: BudgetUseCases = 
         raise HTTPException(status_code=404, detail="Presupuesto no encontrado")
 
     whatsapp_url = uc.generate_whatsapp_text(budget)
-    html_content = templates.TemplateResponse("budget_view.html", {
+    html_content = templates.TemplateResponse("public/budget_view.html", {
         "request": request,
         "budget": budget,
         "whatsapp_url": whatsapp_url,
