@@ -16,6 +16,7 @@ async def search_products(
     sku: str | None = None,
     category_id: str | None = None,
     category_slug: str | None = None,
+    tags: list[str] | None = Query(default=None),
     min_price: float | None = None,
     max_price: float | None = None,
     page: int = Query(1, ge=1),
@@ -25,7 +26,7 @@ async def search_products(
 ):
     params = ProductSearchParams(
         q=q, sku=sku, category_id=category_id, category_slug=category_slug,
-        min_price=min_price, max_price=max_price, page=page, limit=limit, sort_by=sort_by,
+        tags=tags, min_price=min_price, max_price=max_price, page=page, limit=limit, sort_by=sort_by,
     )
     return await uc.search(params, str(request.base_url))
 

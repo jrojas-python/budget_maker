@@ -1,4 +1,5 @@
 import logging
+import re
 from typing import Any
 
 import pymongo
@@ -84,9 +85,20 @@ class ProductRepository(BaseRepository):
         query: dict[str, Any] = {}
 
         if params.q:
-            query["$text"] = {"$search": params.q}
+            escaped = re.escape(params.q)
+            regex_filter = {"$regex": escaped, "$options": "i"}
+            query["$or"] = [
+                {"name": regex_filter},
+                {"sku": regex_filter},
+                {"tags": regex_filter},
+            ]
         if params.sku:
             query["sku"] = params.sku
+
+        if params.tags:
+            normalized_tags = [t.strip().lower() for t in params.tags if t.strip()]
+            if normalized_tags:
+                query["tags"] = {"$in": normalized_tags}
 
         cat_id = resolved_category_id or params.category_id
         if cat_id:

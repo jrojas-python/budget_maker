@@ -131,10 +131,11 @@ Todos los parámetros son opcionales y combinables (filtros acumulativos AND).
 
 | Parámetro | Tipo | Descripción |
 |-----------|------|-------------|
-| `q` | string | Búsqueda de texto libre (usa MongoDB text index sobre `name`) |
+| `q` | string | Búsqueda parcial por subcadena (case-insensitive) en nombre, SKU y tags |
 | `sku` | string | Filtro exacto por código SKU |
 | `category_id` | string | Filtro por ObjectId de categoría |
 | `category_slug` | string | Filtro por slug de categoría (se resuelve internamente a `category_id`) |
+| `tags` | list[string] | Filtro por tags con lógica OR (ejemplo: `?tags=metal&tags=madera`) |
 | `min_price` | float | Precio mínimo (inclusive) |
 | `max_price` | float | Precio máximo (inclusive) |
 | `page` | int | Página (default: 1, mínimo: 1) |
@@ -154,6 +155,12 @@ GET /api/v1/products/search?min_price=5&max_price=100&sort_by=price_asc
 
 # Paginado
 GET /api/v1/products/search?page=2&limit=12
+
+# Filtrar por tags (OR)
+GET /api/v1/products/search?tags=metal&tags=madera
+
+# Búsqueda parcial + filtro por tags (AND)
+GET /api/v1/products/search?q=tornillo&tags=metal
 ```
 
 **Respuesta:** `PaginatedResponse<ProductResponse>`

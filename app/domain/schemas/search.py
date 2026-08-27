@@ -19,6 +19,7 @@ class ProductSearchParams(BaseModel):
     sku: str | None = None
     category_id: str | None = None
     category_slug: str | None = None
+    tags: list[str] | None = None
     min_price: float | None = None
     max_price: float | None = None
     page: int = Field(1, ge=1)
