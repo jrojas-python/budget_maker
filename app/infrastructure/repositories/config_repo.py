@@ -114,6 +114,48 @@ class ConfigRepository:
         await config.save()
         return config
 
+    async def get_payment_methods(self) -> list[str]:
+        config = await self.ensure_global_config()
+        methods, changed = _normalize_payment_methods(config.payment_methods)
+        if changed:
+            config.payment_methods = methods
+            await config.save()
+        return methods
+
+    async def add_payment_method(self, name: str) -> list[str]:
+        config = await self.ensure_global_config()
+        methods, changed = _normalize_payment_methods(config.payment_methods)
+        normalized_name = _normalize_payment_method(name)
+        if any(existing.casefold() == normalized_name.casefold() for existing in methods):
+            raise ValueError("El método de pago ya existe")
+
+        methods.append(normalized_name)
+        config.payment_methods = methods
+        await config.save()
+        if changed:
+            logger.info("Métodos de pago normalizados durante alta de '%s'", normalized_name)
+        return methods
+
+    async def remove_payment_method(self, name: str) -> list[str]:
+        config = await self.ensure_global_config()
+        methods, changed = _normalize_payment_methods(config.payment_methods)
+        normalized_name = _normalize_payment_method(name)
+
+        index_to_remove = -1
+        for index, existing in enumerate(methods):
+            if existing.casefold() == normalized_name.casefold():
+                index_to_remove = index
+                break
+        if index_to_remove < 0:
+            raise KeyError("El método de pago no existe")
+
+        methods.pop(index_to_remove)
+        config.payment_methods = methods
+        await config.save()
+        if changed:
+            logger.info("Métodos de pago normalizados durante baja de '%s'", normalized_name)
+        return methods
+
     def _entries_from_typed_config(self, config: GlobalConfig) -> list[dict[str, ConfigValue | str]]:
         entries: list[dict[str, ConfigValue | str]] = [
             {
@@ -209,3 +251,29 @@ def _coerce_bool(value: ConfigValue) -> bool:
         if normalized in {"0", "false", "no", "off", ""}:
             return False
     raise ValueError("Valor inválido para show_product_photos_in_pdf")
+
+
+def _normalize_payment_methods(methods: list[str]) -> tuple[list[str], bool]:
+    unique_methods: list[str] = []
+    seen: set[str] = set()
+    changed = False
+    for method in methods:
+        normalized_method = _normalize_payment_method(method)
+        key = normalized_method.casefold()
+        if key in seen:
+            changed = True
+            continue
+        seen.add(key)
+        unique_methods.append(normalized_method)
+        if normalized_method != method:
+            changed = True
+    return unique_methods, changed
+
+
+def _normalize_payment_method(name: str) -> str:
+    if not isinstance(name, str):
+        raise ValueError("El método de pago debe ser texto")
+    normalized = name.strip()
+    if not normalized:
+        raise ValueError("El método de pago no puede estar vacío")
+    return normalized

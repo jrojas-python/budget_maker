@@ -42,7 +42,7 @@ async def test_crud_category(client: AsyncClient, auth_headers: dict):
 
     # Delete
     res = await client.delete(f"/api/v1/categories/{cat_id}", headers=auth_headers)
-    assert res.status_code == 200
+    assert res.status_code == 204
 
 
 @pytest.mark.asyncio

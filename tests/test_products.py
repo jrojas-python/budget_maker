@@ -48,7 +48,7 @@ async def test_crud_product(client: AsyncClient, auth_headers: dict):
 
     # Delete
     res = await client.delete(f"/api/v1/products/{pid}", headers=auth_headers)
-    assert res.status_code == 200
+    assert res.status_code == 204
 
 
 @pytest.mark.asyncio

@@ -74,3 +74,25 @@ Registro de iteraciones del proyecto.
 ### Archivos creados
 - `tests/test_config.py`
 - `tests/test_budgets.py`
+
+---
+
+## [2026-08-26] Iteración 3 — Membrete y métodos de pago dinámicos
+
+### Realizado
+- Se añadió almacenamiento tipado de métodos de pago dinámicos en `GlobalConfig`.
+- Se implementó CRUD mínimo de métodos de pago (`GET/POST/DELETE`) con normalización, deduplicación y validaciones explícitas.
+- Se agregó endpoint explícito de logo `POST /api/v1/config/logo` con validación estricta PNG/JPG y HTTP 400 para formato inválido.
+- Se mantuvo compatibilidad del endpoint legacy `POST /api/v1/config/branding/{key}` y para `site_logo` se alineó la validación al contrato de logo.
+- Se amplió la suite de pruebas para cubrir matriz de escenarios de branding y métodos de pago.
+- Se actualizó README con el contrato final de endpoints, validaciones y uso.
+
+### Archivos modificados
+- `app/domain/models/global_config.py`
+- `app/domain/schemas/global_config.py`
+- `app/infrastructure/repositories/config_repo.py`
+- `app/application/use_cases/config_use_cases.py`
+- `app/api/v1/config.py`
+- `tests/test_config.py`
+- `README.md`
+- `.agents/changelog.md`

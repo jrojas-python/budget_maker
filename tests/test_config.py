@@ -1,3 +1,6 @@
+import os
+from pathlib import Path
+
 import pytest
 from httpx import AsyncClient
 from app.domain.models.global_config import GlobalConfig
@@ -75,3 +78,177 @@ async def test_legacy_boolean_string_is_coerced_correctly(client: AsyncClient, a
     global_cfg = await client.get("/api/v1/config/global")
     assert global_cfg.status_code == 200
     assert global_cfg.json()["show_product_photos_in_pdf"] is False
+
+
+@pytest.mark.asyncio
+async def test_payment_methods_crud_happy_path(client: AsyncClient, auth_headers: dict):
+    initial = await client.get("/api/v1/config/payment-methods")
+    assert initial.status_code == 200
+    assert initial.json() == {"payment_methods": []}
+
+    created = await client.post(
+        "/api/v1/config/payment-methods",
+        json={"name": " Transferencia "},
+        headers=auth_headers,
+    )
+    assert created.status_code == 200
+    assert created.json() == {"payment_methods": ["Transferencia"]}
+
+    listed = await client.get("/api/v1/config/payment-methods")
+    assert listed.status_code == 200
+    assert listed.json() == {"payment_methods": ["Transferencia"]}
+
+    removed = await client.delete("/api/v1/config/payment-methods/transferencia", headers=auth_headers)
+    assert removed.status_code == 200
+    assert removed.json() == {"payment_methods": []}
+
+
+@pytest.mark.asyncio
+async def test_payment_method_duplicate_or_empty_returns_422(client: AsyncClient, auth_headers: dict):
+    created = await client.post(
+        "/api/v1/config/payment-methods",
+        json={"name": "Efectivo"},
+        headers=auth_headers,
+    )
+    assert created.status_code == 200
+
+    duplicate = await client.post(
+        "/api/v1/config/payment-methods",
+        json={"name": " efectivo "},
+        headers=auth_headers,
+    )
+    assert duplicate.status_code == 422
+
+    empty = await client.post(
+        "/api/v1/config/payment-methods",
+        json={"name": "   "},
+        headers=auth_headers,
+    )
+    assert empty.status_code == 422
+
+    listed = await client.get("/api/v1/config/payment-methods")
+    assert listed.status_code == 200
+    assert listed.json() == {"payment_methods": ["Efectivo"]}
+
+
+@pytest.mark.asyncio
+async def test_remove_payment_method_not_found_returns_404(client: AsyncClient, auth_headers: dict):
+    res = await client.delete("/api/v1/config/payment-methods/no-existe", headers=auth_headers)
+    assert res.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_upload_logo_explicit_endpoint_accepts_png_and_persists(client: AsyncClient, auth_headers: dict):
+    test_branding_dir = Path("uploads/branding-tests")
+    test_branding_dir.mkdir(parents=True, exist_ok=True)
+    previous_branding_dir = os.environ.get("BRANDING_DIR")
+    os.environ["BRANDING_DIR"] = str(test_branding_dir)
+    logo_file = test_branding_dir / "site_logo.png"
+    if logo_file.exists():
+        logo_file.unlink()
+
+    try:
+        res = await client.post(
+            "/api/v1/config/logo",
+            files={"file": ("logo.png", b"fake-png-bytes", "image/png")},
+            headers=auth_headers,
+        )
+        assert res.status_code == 200
+        body = res.json()
+        assert body["key"] == "site_logo"
+        assert body["value"] == "/uploads/branding/site_logo.png"
+        assert logo_file.exists()
+    finally:
+        if previous_branding_dir is None:
+            os.environ.pop("BRANDING_DIR", None)
+        else:
+            os.environ["BRANDING_DIR"] = previous_branding_dir
+        if logo_file.exists():
+            logo_file.unlink()
+        if test_branding_dir.exists() and not any(test_branding_dir.iterdir()):
+            test_branding_dir.rmdir()
+
+
+@pytest.mark.asyncio
+async def test_upload_logo_explicit_endpoint_accepts_jpg(client: AsyncClient, auth_headers: dict):
+    test_branding_dir = Path("uploads/branding-tests")
+    test_branding_dir.mkdir(parents=True, exist_ok=True)
+    previous_branding_dir = os.environ.get("BRANDING_DIR")
+    os.environ["BRANDING_DIR"] = str(test_branding_dir)
+    logo_file = test_branding_dir / "site_logo.jpg"
+    if logo_file.exists():
+        logo_file.unlink()
+
+    try:
+        res = await client.post(
+            "/api/v1/config/logo",
+            files={"file": ("logo.jpg", b"fake-jpg-bytes", "image/jpg")},
+            headers=auth_headers,
+        )
+        assert res.status_code == 200
+        body = res.json()
+        assert body["key"] == "site_logo"
+        assert body["value"] == "/uploads/branding/site_logo.jpg"
+        assert logo_file.exists()
+    finally:
+        if previous_branding_dir is None:
+            os.environ.pop("BRANDING_DIR", None)
+        else:
+            os.environ["BRANDING_DIR"] = previous_branding_dir
+        if logo_file.exists():
+            logo_file.unlink()
+        if test_branding_dir.exists() and not any(test_branding_dir.iterdir()):
+            test_branding_dir.rmdir()
+
+
+@pytest.mark.asyncio
+async def test_upload_logo_invalid_format_returns_400_and_keeps_previous_value(client: AsyncClient, auth_headers: dict):
+    seed = await client.put(
+        "/api/v1/config/site_logo",
+        json={"value": "/uploads/branding/site_logo.png", "description": "Logo"},
+        headers=auth_headers,
+    )
+    assert seed.status_code == 200
+
+    res = await client.post(
+        "/api/v1/config/logo",
+        files={"file": ("logo.webp", b"fake-webp-bytes", "image/webp")},
+        headers=auth_headers,
+    )
+    assert res.status_code == 400
+
+    current = await client.get("/api/v1/config/site_logo")
+    assert current.status_code == 200
+    assert current.json()["value"] == "/uploads/branding/site_logo.png"
+
+
+@pytest.mark.asyncio
+async def test_upload_branding_legacy_icon_endpoint_still_works(client: AsyncClient, auth_headers: dict):
+    test_branding_dir = Path("uploads/branding-tests")
+    test_branding_dir.mkdir(parents=True, exist_ok=True)
+    previous_branding_dir = os.environ.get("BRANDING_DIR")
+    os.environ["BRANDING_DIR"] = str(test_branding_dir)
+    icon_file = test_branding_dir / "site_icon.webp"
+    if icon_file.exists():
+        icon_file.unlink()
+
+    try:
+        res = await client.post(
+            "/api/v1/config/branding/site_icon",
+            files={"file": ("icon.webp", b"fake-webp-bytes", "image/webp")},
+            headers=auth_headers,
+        )
+        assert res.status_code == 200
+        body = res.json()
+        assert body["key"] == "site_icon"
+        assert body["value"] == "/uploads/branding/site_icon.webp"
+        assert icon_file.exists()
+    finally:
+        if previous_branding_dir is None:
+            os.environ.pop("BRANDING_DIR", None)
+        else:
+            os.environ["BRANDING_DIR"] = previous_branding_dir
+        if icon_file.exists():
+            icon_file.unlink()
+        if test_branding_dir.exists() and not any(test_branding_dir.iterdir()):
+            test_branding_dir.rmdir()

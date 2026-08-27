@@ -179,11 +179,15 @@ GET /api/v1/products/search?page=2&limit=12
 |--------|------|------|-------------|
 | GET | `/api/v1/config/` | — | Listar configuración |
 | GET | `/api/v1/config/global` | — | Obtener configuración global tipada |
-| PUT | `/api/v1/config/global` | ****** Actualizar configuración global tipada |
+| PUT | `/api/v1/config/global` | Requerida | Actualizar configuración global tipada |
+| GET | `/api/v1/config/payment-methods` | — | Listar métodos de pago dinámicos |
+| POST | `/api/v1/config/payment-methods` | Requerida | Agregar método de pago dinámico |
+| DELETE | `/api/v1/config/payment-methods/{method_name}` | Requerida | Eliminar método de pago dinámico |
+| POST | `/api/v1/config/logo` | Requerida | Subir logo explícito (solo PNG/JPG) |
 | GET | `/api/v1/config/{key}` | — | Obtener config por clave |
-| PUT | `/api/v1/config/{key}` | Bearer | Actualizar config |
-| POST | `/api/v1/config/branding/{key}` | Bearer | Subir logo o icono (`site_logo`, `site_icon`) |
-| DELETE | `/api/v1/config/branding/{key}` | Bearer | Eliminar logo o icono |
+| PUT | `/api/v1/config/{key}` | Requerida | Actualizar config |
+| POST | `/api/v1/config/branding/{key}` | Requerida | Subir branding legacy (`site_logo`, `site_icon`) |
+| DELETE | `/api/v1/config/branding/{key}` | Requerida | Eliminar logo o icono |
 
 ### Frontend Web
 | Ruta | Descripción |
@@ -279,9 +283,15 @@ El archivo `.xlsx` debe tener estas columnas (primera fila como headers):
 
 ## Branding (logo e icono)
 
-- **Logo** (`site_logo`): Se sube vía `POST /api/v1/config/branding/site_logo` y se guarda en `uploads/branding/`. Se muestra en el navbar junto al título.
-- **Icono** (`site_icon`): Se sube vía `POST /api/v1/config/branding/site_icon` y se guarda en `uploads/branding/`. Se usa como favicon del sitio.
-- Formatos permitidos: PNG, JPEG, WebP, SVG, ICO. Tamaño máximo: 2MB.
-- Los archivos son públicos y accesibles en `/uploads/branding/{filename}`.
-- Se pueden eliminar con `DELETE /api/v1/config/branding/{key}`.
-- El frontend carga dinámicamente estos valores desde `/api/v1/config/` al iniciar la página.
+- **Logo explícito** (`site_logo`): `POST /api/v1/config/logo` (solo PNG/JPG). Si se envía otro formato retorna **HTTP 400**.
+- **Ruta compatible existente**: `POST /api/v1/config/branding/site_logo` se mantiene y aplica la misma validación de logo (PNG/JPG).
+- **Icono** (`site_icon`): `POST /api/v1/config/branding/site_icon` (PNG/JPEG/WebP/SVG/ICO).
+- Tamaño máximo de branding: 2MB.
+- Los archivos quedan públicos en `/uploads/branding/{filename}` y se eliminan con `DELETE /api/v1/config/branding/{key}`.
+
+## Métodos de pago dinámicos
+
+- `GET /api/v1/config/payment-methods` retorna `{"payment_methods": [...]}`.
+- `POST /api/v1/config/payment-methods` recibe `{"name": "Transferencia"}` y normaliza espacios.
+- `DELETE /api/v1/config/payment-methods/{method_name}` elimina por coincidencia case-insensitive.
+- Nombres vacíos o duplicados retornan **HTTP 422** sin modificar la persistencia.

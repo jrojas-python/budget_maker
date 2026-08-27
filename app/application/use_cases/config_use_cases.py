@@ -53,3 +53,12 @@ class ConfigUseCases:
             existing = await self._repo.get_by_key(key)
             if not existing:
                 await self._repo.set_value(key, value, desc)
+
+    async def get_payment_methods(self) -> list[str]:
+        return await self._repo.get_payment_methods()
+
+    async def add_payment_method(self, name: str) -> list[str]:
+        return await self._repo.add_payment_method(name)
+
+    async def remove_payment_method(self, name: str) -> list[str]:
+        return await self._repo.remove_payment_method(name)

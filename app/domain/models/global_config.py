@@ -10,6 +10,7 @@ class GlobalConfig(Document):
     tax_rate: float = Field(default=18.0, ge=0, le=100)
     link_ttl_minutes: int = Field(default=30, ge=1, le=10080)
     show_product_photos_in_pdf: bool = True
+    payment_methods: list[str] = Field(default_factory=list)
     extra_settings: dict[str, float | str | int | bool] = Field(default_factory=dict)
     descriptions: dict[str, str] = Field(default_factory=dict)
 

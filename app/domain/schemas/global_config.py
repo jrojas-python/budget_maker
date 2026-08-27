@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 ConfigValue = float | str | int | bool
 
@@ -24,3 +24,19 @@ class GlobalBusinessConfigUpdate(BaseModel):
     tax_rate: float = Field(..., ge=0, le=100)
     link_ttl_minutes: int = Field(..., ge=1, le=10080)
     show_product_photos_in_pdf: bool
+
+
+class PaymentMethodCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=80)
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("El nombre del método de pago no puede estar vacío")
+        return normalized
+
+
+class PaymentMethodsResponse(BaseModel):
+    payment_methods: list[str]
