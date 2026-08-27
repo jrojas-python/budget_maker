@@ -77,22 +77,27 @@ Registro de iteraciones del proyecto.
 
 ---
 
-## [2026-08-26] Iteración 3 — Membrete y métodos de pago dinámicos
+## [2026-08-26] Iteracion 4 - Catalogo de productos con imagenes y tags
 
 ### Realizado
-- Se añadió almacenamiento tipado de métodos de pago dinámicos en `GlobalConfig`.
-- Se implementó CRUD mínimo de métodos de pago (`GET/POST/DELETE`) con normalización, deduplicación y validaciones explícitas.
-- Se agregó endpoint explícito de logo `POST /api/v1/config/logo` con validación estricta PNG/JPG y HTTP 400 para formato inválido.
-- Se mantuvo compatibilidad del endpoint legacy `POST /api/v1/config/branding/{key}` y para `site_logo` se alineó la validación al contrato de logo.
-- Se amplió la suite de pruebas para cubrir matriz de escenarios de branding y métodos de pago.
-- Se actualizó README con el contrato final de endpoints, validaciones y uso.
+- Se amplio el modelo `Product` para soportar listas de imagenes (`images`) y tags normalizados (`tags`) manteniendo compatibilidad temporal con `image_filename`.
+- Se actualizo el contrato API de productos para responder `image_urls` y `tags`, y se agregaron validaciones de maximo 10 imagenes y 15 tags.
+- Se refactorizo la logica de carga/eliminacion de imagenes para operar por archivo individual, con fallback de lectura para productos legacy.
+- Se adapto el frontend web para consumir `image_urls` y gestionar eliminacion individual de imagenes existentes.
+- Se incorporo cobertura de pruebas para normalizacion de tags, limites de imagenes, errores de formato y compatibilidad legacy.
+- Se actualizo README con el contrato de imagenes/tags y los nuevos limites operativos.
 
 ### Archivos modificados
-- `app/domain/models/global_config.py`
-- `app/domain/schemas/global_config.py`
-- `app/infrastructure/repositories/config_repo.py`
-- `app/application/use_cases/config_use_cases.py`
-- `app/api/v1/config.py`
-- `tests/test_config.py`
+- `app/domain/models/product.py`
+- `app/domain/schemas/product.py`
+- `app/infrastructure/repositories/product_repo.py`
+- `app/application/use_cases/product_use_cases.py`
+- `app/api/v1/products.py`
+- `web/templates/admin/dashboard.html`
+- `web/static/js/catalog.js`
+- `web/static/js/admin.js`
+- `tests/test_products.py`
 - `README.md`
 - `.agents/changelog.md`
+- `_bmad-output/implementation-artifacts/spec-1-3-catalogo-de-productos-con-imagenes-y-tags.md`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`

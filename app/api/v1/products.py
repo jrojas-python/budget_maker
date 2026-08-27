@@ -89,30 +89,32 @@ async def upload_product_image(
     _: User = Depends(get_current_user),
     uc: ProductUseCases = Depends(get_product_use_cases),
 ):
-    """Sube o reemplaza la imagen de un producto."""
+    """Sube una imagen y la agrega a la galería del producto."""
     from app.infrastructure.services.image_service import ImageService
     svc = ImageService()
     try:
         content = await svc.validate_image(file)
     except ValueError as e:
-        raise HTTPException(status_code=422, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e))
     try:
         product = await uc.upload_image(product_id, content, file.filename or "image.jpg")
     except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        detail = str(e)
+        raise HTTPException(status_code=404 if detail == "Producto no encontrado" else 422, detail=detail)
     return build_product_response(product, str(request.base_url))
 
 
-@router.delete("/{product_id}/image", response_model=ProductResponse)
+@router.delete("/{product_id}/images/{filename}", response_model=ProductResponse)
 async def delete_product_image(
     product_id: str,
+    filename: str,
     request: Request,
     _: User = Depends(get_current_user),
     uc: ProductUseCases = Depends(get_product_use_cases),
 ):
-    """Elimina la imagen de un producto."""
+    """Elimina una imagen específica de un producto."""
     try:
-        product = await uc.delete_image(product_id)
+        product = await uc.delete_image(product_id, filename)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     return build_product_response(product, str(request.base_url))

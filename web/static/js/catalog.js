@@ -86,8 +86,9 @@ async function loadCatalog() {
         const entry = cart[p.sku];
         const qty = entry ? entry.quantity : 0;
         const selectedColor = entry ? entry.color_hex : (p.colors && p.colors.length ? p.colors[0].hex : null);
-        const imgHtml = p.image_url
-            ? `<img src="${p.image_url}" alt="${p.name}" class="product-img" loading="lazy">`
+        const primaryImageUrl = (p.image_urls && p.image_urls.length) ? p.image_urls[0] : null;
+        const imgHtml = primaryImageUrl
+            ? `<img src="${primaryImageUrl}" alt="${p.name}" class="product-img" loading="lazy">`
             : `<div class="product-img-placeholder"><span>Sin imagen</span></div>`;
         const catBadges = (p.categories || []).map(c => `<span class="badge">${c.name}</span>`).join('');
         const colorDots = (p.colors || []).map(c => {

@@ -1,6 +1,6 @@
 import pymongo
 from beanie import Document, Indexed, PydanticObjectId
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class ProductColor(BaseModel):
@@ -19,8 +19,10 @@ class Product(Document):
     unit: str = "unidad"
     currency: str = "USD"
     image_filename: str | None = None
-    category_ids: list[PydanticObjectId] = []
-    colors: list[ProductColor] = []
+    images: list[str] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
+    category_ids: list[PydanticObjectId] = Field(default_factory=list)
+    colors: list[ProductColor] = Field(default_factory=list)
 
     class Settings:
         name = "products"

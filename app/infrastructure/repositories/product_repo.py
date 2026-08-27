@@ -45,6 +45,16 @@ class ProductRepository(BaseRepository):
         await product.set(data)
         return product
 
+    async def add_image(self, doc_id: str, filename: str) -> Product | None:
+        oid = PydanticObjectId(doc_id)
+        await Product.find_one(Product.id == oid).update({"$push": {"images": filename}})
+        return await self.get_by_id(doc_id)
+
+    async def remove_image(self, doc_id: str, filename: str) -> Product | None:
+        oid = PydanticObjectId(doc_id)
+        await Product.find_one(Product.id == oid).update({"$pull": {"images": filename}})
+        return await self.get_by_id(doc_id)
+
     async def delete(self, doc_id: str) -> bool:
         product = await self.get_by_id(doc_id)
         if not product:

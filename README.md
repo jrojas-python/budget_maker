@@ -117,12 +117,12 @@ Al iniciar, la app crea automáticamente:
 | GET | `/api/v1/products/` | — | Listar todos los productos (sin filtros) |
 | GET | `/api/v1/products/{id}` | — | Obtener producto (con categorías y colores) |
 | GET | `/api/v1/products/search` | — | Búsqueda y filtrado de productos (ver parámetros abajo) |
-| POST | `/api/v1/products/` | Bearer | Crear producto (acepta `colors`, `description`, `brand`) |
-| PUT | `/api/v1/products/{id}` | Bearer | Actualizar producto (acepta `colors`, `description`, `brand`) |
+| POST | `/api/v1/products/` | ****** Crear producto (acepta `colors`, `description`, `brand`, `tags`) |
+| PUT | `/api/v1/products/{id}` | ****** Actualizar producto (acepta `colors`, `description`, `brand`, `tags`) |
 | DELETE | `/api/v1/products/{id}` | Bearer | Eliminar producto |
 | PUT | `/api/v1/products/{id}/colors` | Bearer | Gestionar colores del producto (máx 6) |
-| POST | `/api/v1/products/{id}/image` | Bearer | Subir imagen (PNG/JPEG/WebP, max 2MB) |
-| DELETE | `/api/v1/products/{id}/image` | Bearer | Eliminar imagen |
+| POST | `/api/v1/products/{id}/image` | ****** Subir una imagen (PNG/JPEG/WebP, max 2MB, hasta 10 por producto) |
+| DELETE | `/api/v1/products/{id}/images/{filename}` | ****** Eliminar una imagen especifica |
 | POST | `/api/v1/products/import` | Bearer | Importar desde Excel (.xlsx) |
 
 #### Búsqueda y filtrado — `GET /api/v1/products/search`
@@ -213,7 +213,7 @@ GET /api/v1/products/search?page=2&limit=12
 - **Presupuesto:** modal con detalle completo + acciones (ver, PDF, WhatsApp)
 
 ### Dashboard Admin (`/admin`)
-- **Productos:** CRUD con imagen, descripción, marca, selector de categorías, gestión de colores (hasta 6), thumbnail en tabla
+- **Productos:** CRUD con imagenes (hasta 10), tags normalizados, descripcion, marca, selector de categorias, gestion de colores (hasta 6), thumbnail en tabla
 - **Categorías:** CRUD con slug auto-generado
 - **Usuarios:** Crear/eliminar administradores
 - **Configuración:** Editar impuesto, expiración de links, título, subtítulo, logo e icono del sitio
@@ -236,6 +236,8 @@ Los tests usan una BD separada (`budget_maker_test`) que se elimina al finalizar
 - Los links de presupuesto toman el TTL vigente al momento de creación (`link_ttl_minutes`) y no cambian retroactivamente.
 - Las imágenes se almacenan en `uploads/products/` (montado como volumen Docker)
 - Formatos de imagen permitidos: PNG, JPEG, WebP. Tamaño máximo: 2MB
+- Cada producto soporta entre 0 y 10 imagenes; la API responde `image_urls` con URLs absolutas
+- Cada producto soporta entre 0 y 15 tags; el backend los normaliza a minusculas y sin espacios laterales
 - WeasyPrint requiere `pydyf==0.11.*` (incompatibilidad con 0.12+)
 - MongoDB text index en `Product.name` para búsqueda full-text
 - Las categorías tienen relación M2M con productos vía `category_ids`
@@ -256,42 +258,62 @@ El archivo `.xlsx` debe tener estas columnas (primera fila como headers):
 
 ## Colores de Producto
 
-- Cada producto soporta de 0 a 6 colores con nombre descriptivo + código hexadecimal
-- Gestión desde el formulario admin (color picker + nombre) o vía endpoint `PUT /api/v1/products/{id}/colors`
-- También importables desde Excel (columnas opcionales: `categoría`, `descripción`, `marca`, `colores`)
-- En el catálogo, el usuario selecciona un color antes de agregar al carrito (default: primer color)
-- El color seleccionado aparece en: vista HTML del presupuesto, PDF descargable, texto WhatsApp y modal de confirmación
+- Cada producto soporta de 0 a 6 colores con nombre descriptivo + codigo hexadecimal
+- Gestion desde el formulario admin (color picker + nombre) o via endpoint `PUT /api/v1/products/{id}/colors`
+- Tambien importables desde Excel (columnas opcionales: `categoria`, `descripcion`, `marca`, `colores`)
+- En el catalogo, el usuario selecciona un color antes de agregar al carrito (default: primer color)
+- El color seleccionado aparece en: vista HTML del presupuesto, PDF descargable, texto WhatsApp y modal de confirmacion
+
+## Contrato de tags e imagenes de producto
+
+### Payload de creacion/actualizacion
+
+```json
+{
+  "name": "Tornillo galvanizado",
+  "sku": "TOR-001",
+  "cost": 1.25,
+  "tags": ["ferreteria", " galvanizado "]
+}
+```
+
+- `tags`: lista opcional de 0 a 15 valores. El backend elimina espacios laterales, descarta vacios y normaliza a minusculas.
+- `images`: no se envia en JSON; se administra via `POST /api/v1/products/{id}/image`.
+
+### Respuesta de producto
+
+```json
+{
+  "id": "66cf00000000000000000001",
+  "name": "Tornillo galvanizado",
+  "sku": "TOR-001",
+  "cost": 1.25,
+  "unit": "unidad",
+  "currency": "USD",
+  "image_urls": [
+    "http://localhost:8000/uploads/products/66cf00000000000000000001_ab12cd34.png"
+  ],
+  "tags": ["ferreteria", "galvanizado"],
+  "category_ids": [],
+  "categories": [],
+  "colors": []
+}
+```
 
 ## Variables de Entorno
 
-| Variable | Valor por defecto | Descripción |
-|----------|-------------------|-------------|
-| `MONGO_URI` | `mongodb://mongodb:27017` | URI de conexión a MongoDB |
-| `MONGO_DB_NAME` | `budget_maker` | Nombre de la base de datos |
-| `APP_HOST` | `0.0.0.0` | Host del servidor |
-| `APP_PORT` | `8000` | Puerto del servidor |
+| Variable | Default | Descripción |
+|----------|---------|-------------|
+| `MONGO_URI` | `mongodb://mongodb:27017` | URI de MongoDB |
+| `MONGO_DB_NAME` | `budget_maker` | Nombre de la BD |
+| `JWT_SECRET_KEY` | `change-me-in-production` | Secreto JWT (cambiar en producción) |
+| `JWT_ALGORITHM` | `HS256` | Algoritmo JWT |
+| `JWT_EXPIRE_MINUTES` | `480` | Expiración del token (8h) |
+| `UPLOAD_DIR` | `uploads/products` | Directorio de imágenes |
 
-## Configuración Global (seed automático)
+### Datos Iniciales (Seeds)
 
-| Clave | Valor | Descripción |
-|-------|-------|-------------|
-| `tax_rate` | 18 | % de impuesto sobre subtotal para nuevas cotizaciones |
-| `link_ttl_minutes` | 30 | Minutos de validez del link para nuevas cotizaciones |
-| `show_product_photos_in_pdf` | true | Activa/desactiva fotos de producto en PDF |
-| `site_title` | BUDGET MAKER | Título principal del sitio (navbar + pestaña) |
-| `site_subtitle` | Catálogo de Productos POP | Subtítulo mostrado en el catálogo |
-
-## Branding (logo e icono)
-
-- **Logo explícito** (`site_logo`): `POST /api/v1/config/logo` (solo PNG/JPG). Si se envía otro formato retorna **HTTP 400**.
-- **Ruta compatible existente**: `POST /api/v1/config/branding/site_logo` se mantiene y aplica la misma validación de logo (PNG/JPG).
-- **Icono** (`site_icon`): `POST /api/v1/config/branding/site_icon` (PNG/JPEG/WebP/SVG/ICO).
-- Tamaño máximo de branding: 2MB.
-- Los archivos quedan públicos en `/uploads/branding/{filename}` y se eliminan con `DELETE /api/v1/config/branding/{key}`.
-
-## Métodos de pago dinámicos
-
-- `GET /api/v1/config/payment-methods` retorna `{"payment_methods": [...]}`.
-- `POST /api/v1/config/payment-methods` recibe `{"name": "Transferencia"}` y normaliza espacios.
-- `DELETE /api/v1/config/payment-methods/{method_name}` elimina por coincidencia case-insensitive.
-- Nombres vacíos o duplicados retornan **HTTP 422** sin modificar la persistencia.
+Al iniciar, la app crea automáticamente:
+- **Superadmin:** usuario `admin` / contraseña `admin1234`
+- **Configuración global tipada:** `tax_rate` (18), `link_ttl_minutes` (30), `show_product_photos_in_pdf` (`true`)
+- **Configuración auxiliar:** `site_title`, `site_subtitle`

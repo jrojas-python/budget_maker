@@ -23,10 +23,12 @@ async function loadProducts() {
     const items = Array.isArray(products) ? products : (products.items || []);
     const tbody = document.querySelector('#products-table tbody');
     tbody.innerHTML = items.map(p => {
-        const thumb = p.image_url
-            ? `<img src="${p.image_url}" alt="" class="thumb">`
+        const primaryImageUrl = getPrimaryImageUrl(p);
+        const thumb = primaryImageUrl
+            ? `<img src="${primaryImageUrl}" alt="" class="thumb">`
             : '<span class="thumb-empty">—</span>';
         const cats = (p.categories || []).map(c => c.name).join(', ') || '—';
+        const tags = (p.tags || []).join(', ') || '—';
         const colorDots = (p.colors || []).map(c => `<span class="color-dot" style="background:${c.hex}" title="${c.name}"></span>`).join('');
         return `<tr>
             <td>${thumb}</td>
@@ -34,6 +36,7 @@ async function loadProducts() {
             <td>${p.name}</td>
             <td>${p.brand || '—'}</td>
             <td>${cats}</td>
+            <td>${tags}</td>
             <td>${colorDots || '—'}</td>
             <td>$${p.cost.toFixed(2)}</td>
             <td>${p.unit}</td>
@@ -44,6 +47,33 @@ async function loadProducts() {
             </td>
         </tr>`;
     }).join('');
+}
+
+function getPrimaryImageUrl(product) {
+    return (product.image_urls && product.image_urls.length) ? product.image_urls[0] : null;
+}
+
+function getImageFilename(imageUrl) {
+    if (!imageUrl) return null;
+    const parts = imageUrl.split('/');
+    return parts.length ? parts[parts.length - 1] : null;
+}
+
+function renderImageManager(product) {
+    const imgArea = document.getElementById('image-area');
+    const imageUrls = product ? (product.image_urls || []) : [];
+    const previews = imageUrls.map(url => {
+        const filename = getImageFilename(url);
+        return `<div class="img-preview-item">
+            <img src="${url}" class="img-preview">
+            <button class="btn-sm btn-delete" type="button" onclick="deleteProductImage('${product.id}', '${filename}')">Quitar imagen</button>
+        </div>`;
+    }).join('');
+
+    imgArea.innerHTML = `
+        ${previews || '<span class="hint">Sin imágenes cargadas</span>'}
+        <input type="file" id="p-image" accept="image/png,image/jpeg,image/webp">
+    `;
 }
 
 function showProductForm(product = null) {
@@ -63,13 +93,8 @@ function showProductForm(product = null) {
         document.getElementById('p-currency').value = product.currency;
         document.getElementById('p-description').value = product.description || '';
         document.getElementById('p-brand').value = product.brand || '';
-
-        const imgArea = document.getElementById('image-area');
-        if (product.image_url) {
-            imgArea.innerHTML = `<img src="${product.image_url}" class="img-preview"><button class="btn-sm btn-delete" onclick="deleteProductImage('${product.id}')">Quitar imagen</button>`;
-        } else {
-            imgArea.innerHTML = '<input type="file" id="p-image" accept="image/png,image/jpeg,image/webp">';
-        }
+        document.getElementById('p-tags').value = (product.tags || []).join(', ');
+        renderImageManager(product);
     } else {
         document.getElementById('form-title').textContent = 'Nuevo Producto';
         document.getElementById('product-edit-id').value = '';
@@ -81,7 +106,8 @@ function showProductForm(product = null) {
         document.getElementById('p-currency').value = 'USD';
         document.getElementById('p-description').value = '';
         document.getElementById('p-brand').value = '';
-        document.getElementById('image-area').innerHTML = '<input type="file" id="p-image" accept="image/png,image/jpeg,image/webp">';
+        document.getElementById('p-tags').value = '';
+        renderImageManager();
     }
 }
 
@@ -109,6 +135,10 @@ function hideProductForm() {
 async function saveProduct() {
     const editId = document.getElementById('product-edit-id').value;
     const categoryIds = Array.from(document.querySelectorAll('#category-checkboxes input:checked')).map(cb => cb.value);
+    const tags = document.getElementById('p-tags').value
+        .split(',')
+        .map(tag => tag.trim())
+        .filter(Boolean);
 
     const data = {
         name: document.getElementById('p-name').value,
@@ -120,6 +150,7 @@ async function saveProduct() {
         currency: document.getElementById('p-currency').value,
         category_ids: categoryIds,
         colors: window._editColors || [],
+        tags,
     };
 
     let res;
@@ -165,8 +196,8 @@ async function deleteProduct(id) {
     else showToast('Error al eliminar', 'error');
 }
 
-async function deleteProductImage(id) {
-    const res = await apiFetch('/api/v1/products/' + id + '/image', { method: 'DELETE' });
+async function deleteProductImage(id, filename) {
+    const res = await apiFetch('/api/v1/products/' + id + '/images/' + encodeURIComponent(filename), { method: 'DELETE' });
     if (res.ok) { showToast('Imagen eliminada'); loadProducts(); editProduct(id); }
     else showToast('Error al eliminar imagen', 'error');
 }
