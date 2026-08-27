@@ -44,8 +44,8 @@ development_status:
   1-5-búsqueda-parcial-y-filtrado-or-por-tags: review
   epic-1-retrospective: optional
 
-  epic-2: backlog
-  2-1-creación-de-presupuesto-con-datos-de-cliente-y-método-activo: backlog
+  epic-2: in-progress
+  2-1-creación-de-presupuesto-con-datos-de-cliente-y-método-activo: review
   2-2-identificación-pública-y-expiración-del-presupuesto: backlog
   2-3-cálculo-inmutable-de-montos-de-cotización: backlog
   2-4-generación-de-pdf-profesional-configurable: backlog

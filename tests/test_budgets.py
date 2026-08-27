@@ -84,3 +84,43 @@ async def test_existing_budget_not_recalculated_after_config_change(client: Asyn
     first_model.created_at = datetime.now(timezone.utc) - timedelta(minutes=10)
     await first_model.save()
     assert await uc.is_expired(first_model) is False
+
+
+@pytest.mark.asyncio
+async def test_create_budget_with_active_payment_method(client: AsyncClient, auth_headers: dict):
+    """Crear presupuesto con método de pago activo lo persiste correctamente."""
+    await _create_product(client, auth_headers)
+    await client.post("/api/v1/config/payment-methods", json={"name": "Transferencia"}, headers=auth_headers)
+
+    payload = _budget_payload()
+    payload["payment_method"] = "Transferencia"
+    payload["client_info"]["email"] = "cliente@test.com"
+
+    res = await client.post("/api/v1/budgets/", json=payload)
+    assert res.status_code == 201
+    budget = res.json()
+    assert budget["payment_method"] == "Transferencia"
+    assert budget["client_info"]["email"] == "cliente@test.com"
+
+
+@pytest.mark.asyncio
+async def test_create_budget_rejects_inactive_payment_method(client: AsyncClient, auth_headers: dict):
+    """Método de pago que no está activo retorna HTTP 422."""
+    await _create_product(client, auth_headers)
+
+    payload = _budget_payload()
+    payload["payment_method"] = "Bitcoin"
+
+    res = await client.post("/api/v1/budgets/", json=payload)
+    assert res.status_code == 422
+    assert "no disponible" in res.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_create_budget_without_payment_method(client: AsyncClient, auth_headers: dict):
+    """Crear presupuesto sin método de pago mantiene compatibilidad."""
+    await _create_product(client, auth_headers)
+
+    res = await client.post("/api/v1/budgets/", json=_budget_payload())
+    assert res.status_code == 201
+    assert res.json()["payment_method"] is None

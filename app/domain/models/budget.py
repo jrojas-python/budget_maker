@@ -13,6 +13,7 @@ class ClientInfo(BaseModel):
     apellidos: str
     documento: str = ""
     direccion: str = ""
+    email: str = ""
     vendedor: str = ""
 
 
@@ -39,6 +40,7 @@ class Budget(Document):
     tax_percent: float = 0.0
     tax_amount: float = 0.0
     total: float = 0.0
+    payment_method: str | None = None
     link_ttl_minutes: int = 30
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 

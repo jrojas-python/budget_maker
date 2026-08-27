@@ -64,6 +64,11 @@ class BudgetUseCases:
             subtotal += line_total
 
         config = await self._config_repo.get_effective_global_config()
+
+        if data.payment_method:
+            if data.payment_method not in config.payment_methods:
+                raise ValueError(f"Método de pago no disponible: {data.payment_method}")
+
         tax_percent = float(config.tax_rate)
         link_ttl_minutes = int(config.link_ttl_minutes)
         tax_amount = subtotal * (tax_percent / 100)
@@ -81,6 +86,7 @@ class BudgetUseCases:
             "tax_percent": tax_percent,
             "tax_amount": round(tax_amount, 2),
             "total": round(total, 2),
+            "payment_method": data.payment_method,
             "link_ttl_minutes": link_ttl_minutes,
         }
         return await self._budget_repo.create(budget_data)
