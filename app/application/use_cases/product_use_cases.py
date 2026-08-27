@@ -209,6 +209,9 @@ class ProductUseCases:
                     if cat:
                         cat_ids.append(PydanticObjectId(str(cat.id)))
                 data["category_ids"] = cat_ids
+            if "tags" in data:
+                normalized = _normalize_tags(data["tags"])
+                data["tags"] = normalized[:15]
             existing = await self._repo.get_by_sku(data["sku"])
             await self._repo.upsert_by_sku(data)
             if existing:

@@ -345,3 +345,103 @@ async def test_invalid_hex_validation(client: AsyncClient, auth_headers: dict):
         "colors": [{"name": "Malo", "hex": "NOTHEX"}],
     }, headers=auth_headers)
     assert res.status_code == 422
+
+
+def _make_excel(rows: list[list]) -> bytes:
+    """Helper para crear archivos Excel en memoria."""
+    from openpyxl import Workbook
+    wb = Workbook()
+    ws = wb.active
+    for row in rows:
+        ws.append(row)
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+@pytest.mark.asyncio
+async def test_import_excel_with_tags_normalizes(client: AsyncClient, auth_headers: dict):
+    """Importar Excel con columna tags normaliza correctamente."""
+    excel_bytes = _make_excel([
+        ["nombre", "sku", "costo", "unidad", "moneda", "tags"],
+        ["Tornillo Hex", "IMP-001", 5.0, "caja", "USD", "Metal, INDUSTRIAL, metal "],
+        ["Tuerca M8", "IMP-002", 3.0, "bolsa", "USD", "metal, fijacion"],
+    ])
+    res = await client.post(
+        "/api/v1/products/import",
+        files={"file": ("productos.xlsx", io.BytesIO(excel_bytes), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+        headers=auth_headers,
+    )
+    assert res.status_code == 200
+    data = res.json()
+    assert data["created"] == 2
+
+    res = await client.get("/api/v1/products/")
+    products = {p["sku"]: p for p in res.json()}
+    assert products["IMP-001"]["tags"] == ["metal", "industrial"]
+    assert products["IMP-002"]["tags"] == ["metal", "fijacion"]
+
+
+@pytest.mark.asyncio
+async def test_import_excel_upsert_rewrites_tags(client: AsyncClient, auth_headers: dict):
+    """Upsert por SKU reescribe tags con valores nuevos."""
+    excel1 = _make_excel([
+        ["nombre", "sku", "costo", "unidad", "moneda", "tags"],
+        ["Producto X", "UPS-001", 10.0, "unidad", "USD", "original, viejo"],
+    ])
+    await client.post(
+        "/api/v1/products/import",
+        files={"file": ("p.xlsx", io.BytesIO(excel1), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+        headers=auth_headers,
+    )
+
+    excel2 = _make_excel([
+        ["nombre", "sku", "costo", "unidad", "moneda", "tags"],
+        ["Producto X", "UPS-001", 12.0, "unidad", "USD", "nuevo, actualizado"],
+    ])
+    res = await client.post(
+        "/api/v1/products/import",
+        files={"file": ("p.xlsx", io.BytesIO(excel2), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+        headers=auth_headers,
+    )
+    assert res.json()["updated"] == 1
+
+    res = await client.get("/api/v1/products/")
+    products = {p["sku"]: p for p in res.json()}
+    assert products["UPS-001"]["tags"] == ["nuevo", "actualizado"]
+
+
+@pytest.mark.asyncio
+async def test_import_excel_without_tags_column(client: AsyncClient, auth_headers: dict):
+    """Excel sin columna tags no rompe la importación."""
+    excel_bytes = _make_excel([
+        ["nombre", "sku", "costo", "unidad", "moneda"],
+        ["Producto Simple", "NOTAG-001", 7.0, "unidad", "USD"],
+    ])
+    res = await client.post(
+        "/api/v1/products/import",
+        files={"file": ("p.xlsx", io.BytesIO(excel_bytes), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+        headers=auth_headers,
+    )
+    assert res.status_code == 200
+    assert res.json()["created"] == 1
+
+
+@pytest.mark.asyncio
+async def test_import_excel_truncates_excess_tags(client: AsyncClient, auth_headers: dict):
+    """Fila con 16+ tags solo persiste los primeros 15."""
+    many_tags = ", ".join([f"tag-{i}" for i in range(20)])
+    excel_bytes = _make_excel([
+        ["nombre", "sku", "costo", "unidad", "moneda", "tags"],
+        ["Producto Exceso", "EXC-001", 5.0, "unidad", "USD", many_tags],
+    ])
+    res = await client.post(
+        "/api/v1/products/import",
+        files={"file": ("p.xlsx", io.BytesIO(excel_bytes), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+        headers=auth_headers,
+    )
+    assert res.status_code == 200
+
+    res = await client.get("/api/v1/products/")
+    products = {p["sku"]: p for p in res.json()}
+    assert len(products["EXC-001"]["tags"]) == 15

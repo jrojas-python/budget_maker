@@ -7,7 +7,7 @@ from openpyxl import load_workbook
 logger = logging.getLogger(__name__)
 
 EXPECTED_COLUMNS = {"nombre", "sku", "costo", "unidad", "moneda"}
-OPTIONAL_COLUMNS = {"colores", "categoría", "categoria", "descripción", "descripcion", "marca"}
+OPTIONAL_COLUMNS = {"colores", "categoría", "categoria", "descripción", "descripcion", "marca", "tags"}
 COLUMN_MAP = {
     "nombre": "name",
     "sku": "sku",
@@ -40,6 +40,7 @@ class ExcelService:
 
         colors_idx = headers.index("colores") if "colores" in headers else None
         cat_idx = next((headers.index(h) for h in ("categoría", "categoria") if h in headers), None)
+        tags_idx = headers.index("tags") if "tags" in headers else None
 
         products = []
         for row in rows[1:]:
@@ -57,6 +58,8 @@ class ExcelService:
                     row_dict["colors"] = self._parse_colors(str(row[colors_idx]))
                 if cat_idx is not None and cat_idx < len(row) and row[cat_idx]:
                     row_dict["_category_slugs"] = [s.strip() for s in str(row[cat_idx]).split(",") if s.strip()]
+                if tags_idx is not None and tags_idx < len(row) and row[tags_idx]:
+                    row_dict["tags"] = [s.strip() for s in str(row[tags_idx]).split(",") if s.strip()]
                 products.append(row_dict)
 
         logger.info("Excel parseado: %d productos encontrados", len(products))

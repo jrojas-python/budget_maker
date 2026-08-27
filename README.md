@@ -250,11 +250,13 @@ Los tests usan una BD separada (`budget_maker_test`) que se elimina al finalizar
 
 El archivo `.xlsx` debe tener estas columnas (primera fila como headers):
 
-| nombre | sku | costo | unidad | moneda | categoría (opcional) | descripción (opcional) | marca (opcional) | colores (opcional) |
-|--------|-----|-------|--------|--------|---------------------|----------------------|-----------------|--------------------|
-| Producto A | SKU-001 | 25.50 | unidad | USD | pisos,acabados | Porcelanato premium | MarcaX | Rojo:#FF0000,Azul:#0000FF |
+| nombre | sku | costo | unidad | moneda | categoría (opcional) | descripción (opcional) | marca (opcional) | colores (opcional) | tags (opcional) |
+|--------|-----|-------|--------|--------|---------------------|----------------------|-----------------|--------------------|--------------------|
+| Producto A | SKU-001 | 25.50 | unidad | USD | pisos,acabados | Porcelanato premium | MarcaX | Rojo:#FF0000,Azul:#0000FF | metal, industrial |
 
 **Regla de colisión:** Si el SKU ya existe → actualiza. Si no → crea.
+
+**Tags:** Columna opcional. Separar múltiples tags por comas. Se normalizan a minúsculas, se eliminan duplicados y se limitan a 15 por producto.
 
 ## Colores de Producto
 
