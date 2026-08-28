@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import pytest
 from httpx import AsyncClient
@@ -25,6 +26,16 @@ def _budget_payload() -> dict:
         },
         "items": [{"sku": "BGT-001", "quantity": 1}],
     }
+
+
+async def _expire_budget(uuid: str) -> None:
+    from app.api.dependencies import get_budget_use_cases
+
+    uc = get_budget_use_cases()
+    model = await uc.get_by_uuid(uuid)
+    assert model is not None
+    model.expires_at = datetime.now(timezone.utc) - timedelta(minutes=5)
+    await model.save()
 
 
 @pytest.mark.asyncio
@@ -282,3 +293,150 @@ async def test_legacy_budget_without_expires_at_uses_fallback(client: AsyncClien
 
     res = await client.get(f"/api/v1/budgets/{budget_data['uuid']}")
     assert res.status_code == 410
+
+
+@pytest.mark.asyncio
+async def test_api_pdf_returns_200_for_active_budget(client: AsyncClient, auth_headers: dict):
+    await _create_product(client, auth_headers)
+    created = await client.post("/api/v1/budgets/", json=_budget_payload())
+    budget_uuid = created.json()["uuid"]
+
+    res = await client.get(f"/api/v1/budgets/{budget_uuid}/pdf")
+    assert res.status_code == 200
+    assert res.headers["content-type"].startswith("application/pdf")
+    assert res.content.startswith(b"%PDF")
+
+
+@pytest.mark.asyncio
+async def test_api_pdf_returns_404_when_budget_not_found(client: AsyncClient):
+    res = await client.get("/api/v1/budgets/00000000-0000-0000-0000-000000000000/pdf")
+    assert res.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_api_pdf_returns_410_when_budget_expired(client: AsyncClient, auth_headers: dict):
+    await _create_product(client, auth_headers)
+    created = await client.post("/api/v1/budgets/", json=_budget_payload())
+    budget_uuid = created.json()["uuid"]
+    await _expire_budget(budget_uuid)
+
+    res = await client.get(f"/api/v1/budgets/{budget_uuid}/pdf")
+    assert res.status_code == 410
+    assert "expirado" in res.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_web_pdf_returns_410_when_budget_expired(client: AsyncClient, auth_headers: dict):
+    await _create_product(client, auth_headers)
+    created = await client.post("/api/v1/budgets/", json=_budget_payload())
+    budget_uuid = created.json()["uuid"]
+    await _expire_budget(budget_uuid)
+
+    res = await client.get(f"/presupuesto/{budget_uuid}/pdf")
+    assert res.status_code == 410
+    assert "expirado" in res.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_web_budget_view_returns_html_for_active_budget(client: AsyncClient, auth_headers: dict):
+    await _create_product(client, auth_headers)
+    created = await client.post("/api/v1/budgets/", json=_budget_payload())
+    budget = created.json()
+
+    res = await client.get(f"/presupuesto/{budget['uuid']}")
+    assert res.status_code == 200
+    assert "text/html" in res.headers.get("content-type", "")
+    assert budget["code"] in res.text
+
+
+@pytest.mark.asyncio
+async def test_pdf_hides_photo_column_when_config_is_disabled(client: AsyncClient, auth_headers: dict, monkeypatch: pytest.MonkeyPatch):
+    from app.api.dependencies import _pdf_service
+
+    await _create_product(client, auth_headers)
+    update_global = await client.put(
+        "/api/v1/config/global",
+        json={"tax_rate": 18, "link_ttl_minutes": 30, "show_product_photos_in_pdf": False},
+        headers=auth_headers,
+    )
+    assert update_global.status_code == 200
+
+    created = await client.post("/api/v1/budgets/", json=_budget_payload())
+    budget_uuid = created.json()["uuid"]
+
+    captured: dict[str, str] = {}
+
+    def _fake_pdf(html_content: str, base_url: str | None = None) -> bytes:
+        captured["html"] = html_content
+        captured["base_url"] = base_url or ""
+        return b"%PDF-1.4 prueba"
+
+    monkeypatch.setattr(_pdf_service, "generate_from_html", _fake_pdf)
+
+    res = await client.get(f"/api/v1/budgets/{budget_uuid}/pdf")
+    assert res.status_code == 200
+    assert "photo-column" not in captured["html"]
+    assert "budget-item-photo" not in captured["html"]
+    assert captured["base_url"].startswith("file://")
+
+
+@pytest.mark.asyncio
+async def test_pdf_shows_photo_and_server_side_branding_when_enabled(
+    client: AsyncClient,
+    auth_headers: dict,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    from app.api.dependencies import _pdf_service, get_budget_use_cases
+
+    await _create_product(client, auth_headers)
+    update_global = await client.put(
+        "/api/v1/config/global",
+        json={"tax_rate": 18, "link_ttl_minutes": 30, "show_product_photos_in_pdf": True},
+        headers=auth_headers,
+    )
+    assert update_global.status_code == 200
+
+    update_title = await client.put(
+        "/api/v1/config/site_title",
+        json={"value": "Mi Empresa SRL", "description": "Título de prueba"},
+        headers=auth_headers,
+    )
+    assert update_title.status_code == 200
+    update_subtitle = await client.put(
+        "/api/v1/config/site_subtitle",
+        json={"value": "Cotizaciones profesionales", "description": "Subtítulo de prueba"},
+        headers=auth_headers,
+    )
+    assert update_subtitle.status_code == 200
+
+    uc = get_budget_use_cases()
+    product = await uc._product_repo.get_by_sku("BGT-001")
+    assert product is not None
+    image_filename = "test-budget-photo.png"
+    image_path = Path("uploads/products") / image_filename
+    image_path.parent.mkdir(parents=True, exist_ok=True)
+    image_path.write_bytes(b"fake-image")
+    product.images = [image_filename]
+    await product.save()
+
+    created = await client.post("/api/v1/budgets/", json=_budget_payload())
+    budget_uuid = created.json()["uuid"]
+
+    captured: dict[str, str] = {}
+
+    def _fake_pdf(html_content: str, base_url: str | None = None) -> bytes:
+        captured["html"] = html_content
+        return b"%PDF-1.4 prueba"
+
+    monkeypatch.setattr(_pdf_service, "generate_from_html", _fake_pdf)
+
+    try:
+        res = await client.get(f"/api/v1/budgets/{budget_uuid}/pdf")
+        assert res.status_code == 200
+        assert "photo-column" in captured["html"]
+        assert "budget-item-photo" in captured["html"]
+        assert "Mi Empresa SRL" in captured["html"]
+        assert "Cotizaciones profesionales" in captured["html"]
+    finally:
+        if image_path.exists():
+            image_path.unlink()

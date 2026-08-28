@@ -8,8 +8,8 @@ logger = logging.getLogger(__name__)
 class PdfService:
     """Genera PDFs a partir de contenido HTML."""
 
-    def generate_from_html(self, html_content: str) -> bytes:
+    def generate_from_html(self, html_content: str, base_url: str | None = None) -> bytes:
         """Convierte HTML a bytes PDF."""
-        pdf_bytes = HTML(string=html_content).write_pdf()
+        pdf_bytes = HTML(string=html_content, base_url=base_url).write_pdf()
         logger.info("PDF generado: %d bytes", len(pdf_bytes))
         return pdf_bytes

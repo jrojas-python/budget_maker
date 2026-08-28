@@ -180,6 +180,7 @@ GET /api/v1/products/search?q=tornillo&tags=metal
 | GET | `/api/v1/budgets/` | — | Listar presupuestos |
 | POST | `/api/v1/budgets/` | Bearer | Crear presupuesto |
 | GET | `/api/v1/budgets/{uuid}` | — | Obtener presupuesto por UUID (retorna 410 si expiró) |
+| GET | `/api/v1/budgets/{uuid}/pdf` | No | Descargar PDF (404 si no existe, 410 si expira) |
 
 ### Configuración Global
 | Método | Ruta | Auth | Descripción |
@@ -203,7 +204,7 @@ GET /api/v1/products/search?q=tornillo&tags=metal
 | `/admin/login` | Login de administrador |
 | `/admin` | Dashboard admin (productos, categorías, usuarios, config, import) |
 | `/presupuesto/{uuid}` | Vista HTML del presupuesto (link con expiración) |
-| `/presupuesto/{uuid}/pdf` | Descarga PDF del presupuesto |
+| `/presupuesto/{uuid}/pdf` | Descarga PDF del presupuesto (retorna 410 si expira) |
 
 ## Manual Funcional
 
@@ -242,6 +243,9 @@ Los tests usan una BD separada (`budget_maker_test`) que se elimina al finalizar
 
 - Los links de presupuesto toman el TTL vigente al momento de creación (`link_ttl_minutes`) y no cambian retroactivamente.
 - Los montos de cotización (`unit_cost`, `line_total`, `subtotal`, `tax_amount`, `total`) se congelan al crear el presupuesto y no se recalculan después.
+- La generación de PDF aplica branding en servidor (`site_logo`, `site_title`, `site_subtitle`) y no depende de JavaScript cliente.
+- La visibilidad de fotos en PDF está gobernada por `show_product_photos_in_pdf`; si está en `false`, se oculta la columna completa.
+- En rutas de descarga PDF (`/api/v1/budgets/{uuid}/pdf` y `/presupuesto/{uuid}/pdf`) los presupuestos expirados retornan HTTP 410.
 - Las imágenes se almacenan en `uploads/products/` (montado como volumen Docker)
 - Formatos de imagen permitidos: PNG, JPEG, WebP. Tamaño máximo: 2MB
 - Cada producto soporta entre 0 y 10 imagenes; la API responde `image_urls` con URLs absolutas

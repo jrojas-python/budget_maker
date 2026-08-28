@@ -29,3 +29,4 @@ class BudgetResponse(BaseModel):
     payment_method: str | None = None
     link_ttl_minutes: int
     created_at: datetime
+    expires_at: datetime | None = None

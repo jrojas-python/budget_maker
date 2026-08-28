@@ -4,6 +4,33 @@ Registro de iteraciones del proyecto.
 
 ---
 
+## [2026-08-28] Iteración 7 — Historia 2.4 PDF profesional configurable
+
+### Realizado
+- Se creó el endpoint `GET /api/v1/budgets/{uuid}/pdf` con contrato explícito: 200 para vigente, 404 para inexistente y 410 para expirado.
+- Se alineó `/presupuesto/{uuid}/pdf` para bloquear presupuestos expirados con HTTP 410 y reutilizar el mismo contexto de render PDF.
+- Se amplió la orquestación de `BudgetUseCases` para construir contexto PDF server-side con branding (`site_logo`, `site_title`, `site_subtitle`) y bandera `show_product_photos_in_pdf`.
+- Se actualizó la plantilla pública para separar comportamiento web/PDF y mostrar/ocultar la columna de fotos según configuración global.
+- Se incorporaron reglas de impresión en CSS (`@page`, cabecera repetible, tabla legible) para salida PDF consistente.
+- Se añadieron pruebas de contrato para PDF API (200/404/410), ruta web expirado (410) y visibilidad de fotos según configuración.
+- Se documentó en README el nuevo endpoint API PDF y la política de expiración/fotos.
+
+### Archivos modificados
+- `app/api/v1/budgets.py`
+- `app/application/use_cases/budget_use_cases.py`
+- `app/domain/models/budget.py`
+- `app/domain/schemas/budget.py`
+- `app/infrastructure/services/pdf_service.py`
+- `web/views.py`
+- `web/templates/base.html`
+- `web/templates/public/budget_view.html`
+- `web/static/styles.css`
+- `tests/test_budgets.py`
+- `README.md`
+- `.agents/changelog.md`
+
+---
+
 ## [2026-08-28] Iteración 6 — Historia 2.3 montos inmutables de cotización
 
 ### Realizado

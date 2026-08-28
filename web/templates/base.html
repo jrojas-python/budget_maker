@@ -4,8 +4,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Budget Maker{% endblock %}</title>
+    {% if not is_pdf %}
     <link rel="icon" id="dynamic-favicon" href="/static/favicon.ico" type="image/x-icon">
     <link rel="stylesheet" href="/static/styles.css">
+    {% else %}
+    <link rel="stylesheet" href="web/static/styles.css">
+    {% endif %}
 </head>
 <body>
     {% block navbar %}
@@ -23,6 +27,7 @@
     <div class="container {% block container_class %}{% endblock %}">
         {% block content %}{% endblock %}
     </div>
+    {% if not is_pdf %}
     <div id="toast" class="toast hidden"></div>
     <script src="/static/js/api.js"></script>
     <script src="/static/js/auth.js"></script>
@@ -50,6 +55,7 @@
         } catch(e) {}
     })();
     </script>
+    {% endif %}
     {% block scripts %}{% endblock %}
 </body>
 </html>

@@ -43,6 +43,7 @@ class Budget(Document):
     payment_method: str | None = None
     link_ttl_minutes: int = 30
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    expires_at: datetime | None = None
 
     class Settings:
         name = "budgets"

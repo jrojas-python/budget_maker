@@ -2,6 +2,8 @@ import random
 import string
 import urllib.parse
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from typing import Any
 from uuid import uuid4
 
 from app.domain.models.budget import Budget, BudgetItem
@@ -10,6 +12,7 @@ from app.infrastructure.repositories.budget_repo import BudgetRepository
 from app.infrastructure.repositories.config_repo import ConfigRepository
 from app.infrastructure.repositories.product_repo import ProductRepository
 from app.infrastructure.services.pdf_service import PdfService
+from settings.config import settings
 
 
 class BudgetUseCases:
@@ -110,8 +113,33 @@ class BudgetUseCases:
         elapsed = (now - created).total_seconds() / 60
         return elapsed >= minutes
 
-    def generate_pdf(self, html_content: str) -> bytes:
-        return self._pdf.generate_from_html(html_content)
+    async def build_budget_render_context(self, budget: Budget, for_pdf: bool) -> dict[str, Any]:
+        """Construye contexto de render para web/PDF usando configuración global."""
+        config = await self._config_repo.get_effective_global_config()
+        site_title = str(config.extra_settings.get("site_title", "BUDGET MAKER"))
+        site_subtitle = str(config.extra_settings.get("site_subtitle", "")).strip()
+        show_photos = bool(config.show_product_photos_in_pdf)
+
+        logo_path = str(config.extra_settings.get("site_logo", "")).strip()
+        logo_url = self._resolve_branding_asset(logo_path, for_pdf=for_pdf)
+
+        budget_items: list[dict[str, Any]] = []
+        for item in budget.items:
+            image_url = await self._resolve_product_image(item.sku, for_pdf=for_pdf) if show_photos else None
+            budget_items.append({"item": item, "image_url": image_url})
+
+        return {
+            "budget": budget,
+            "budget_items": budget_items,
+            "show_product_photos_in_pdf": show_photos,
+            "site_title": site_title,
+            "site_subtitle": site_subtitle,
+            "site_logo_url": logo_url,
+            "is_pdf": for_pdf,
+        }
+
+    def generate_pdf(self, html_content: str, base_url: str | None = None) -> bytes:
+        return self._pdf.generate_from_html(html_content, base_url=base_url)
 
     def generate_whatsapp_text(self, budget: Budget) -> str:
         """Genera el texto formateado para compartir por WhatsApp."""
@@ -141,3 +169,47 @@ class BudgetUseCases:
         today = datetime.now(timezone.utc).strftime("%Y%m%d")
         suffix = "".join(random.choices(string.ascii_uppercase + string.digits, k=4))
         return f"BM-{today}-{suffix}"
+
+    def _resolve_branding_asset(self, value: str, for_pdf: bool) -> str | None:
+        if not value:
+            return None
+        if value.startswith(("http://", "https://", "file://")):
+            return value
+        if value.startswith("/uploads/branding/"):
+            if not for_pdf:
+                return value
+            filename = Path(value).name
+            file_path = Path(settings.branding_dir) / filename
+            if file_path.exists():
+                return file_path.resolve().as_uri()
+            return None
+
+        file_path = Path(value)
+        if file_path.exists():
+            if for_pdf:
+                return file_path.resolve().as_uri()
+            return value
+        return None
+
+    async def _resolve_product_image(self, sku: str, for_pdf: bool) -> str | None:
+        product = await self._product_repo.get_by_sku(sku)
+        if not product:
+            return None
+
+        for filename in self._get_stored_images(product.images, product.image_filename):
+            safe_filename = Path(filename).name if filename else ""
+            if not safe_filename:
+                continue
+            if not for_pdf:
+                return f"/uploads/products/{urllib.parse.quote(safe_filename)}"
+            file_path = Path(settings.upload_dir) / safe_filename
+            if file_path.exists():
+                return file_path.resolve().as_uri()
+        return None
+
+    def _get_stored_images(self, images: list[str], legacy_image_filename: str | None) -> list[str]:
+        if images:
+            return list(images)
+        if legacy_image_filename:
+            return [legacy_image_filename]
+        return []
