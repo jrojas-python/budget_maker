@@ -4,6 +4,25 @@ Registro de iteraciones del proyecto.
 
 ---
 
+## [2026-08-28] Iteración 6 — Historia 2.3 montos inmutables de cotización
+
+### Realizado
+- Se reforzó el contrato de snapshot de montos al crear presupuestos para mantener `unit_cost`, `line_total`, `subtotal`, `tax_amount` y `total` inmutables en presupuestos emitidos.
+- Se agregó cobertura de pruebas para garantizar que un cambio posterior de costo de producto no altera cotizaciones existentes y sí impacta cotizaciones nuevas.
+- Se añadió prueba de error para SKU inexistente al crear presupuesto (HTTP 422).
+- Se alineó la evaluación de expiración en fallback legacy para usar el mismo borde temporal que presupuestos con `expires_at`.
+- Se actualizó README con el comportamiento de expiración (410) e inmutabilidad de montos.
+
+### Archivos modificados
+- `app/application/use_cases/budget_use_cases.py`
+- `tests/test_budgets.py`
+- `README.md`
+- `.agents/changelog.md`
+- `_bmad-output/implementation-artifacts/spec-2-3-calculo-inmutable-de-montos-de-cotizacion.md`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
+
+---
+
 ## [2026-08-15] Iteración 1 — Scaffolding inicial
 
 ### Realizado

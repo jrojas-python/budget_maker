@@ -108,7 +108,7 @@ class BudgetUseCases:
         minutes = int(budget.link_ttl_minutes)
         created = budget.created_at.replace(tzinfo=timezone.utc) if budget.created_at.tzinfo is None else budget.created_at
         elapsed = (now - created).total_seconds() / 60
-        return elapsed > minutes
+        return elapsed >= minutes
 
     def generate_pdf(self, html_content: str) -> bytes:
         return self._pdf.generate_from_html(html_content)

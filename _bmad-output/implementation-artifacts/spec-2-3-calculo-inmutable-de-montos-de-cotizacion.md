@@ -84,4 +84,30 @@ context:
   [`test_budgets.py:91`](../../tests/test_budgets.py#L91)
 
 - Prueba de error: SKU inexistente mantiene contrato HTTP 422.
-  [`test_budgets.py:166`](../../tests/test_budgets.py#L166)
+  [`test_budgets.py:169`](../../tests/test_budgets.py#L169)
+
+## Suggested Review Order
+
+**Punto de entrada del cálculo**
+
+- Aquí se congela el snapshot económico al crear la cotización.
+  [`budget_use_cases.py:30`](../../app/application/use_cases/budget_use_cases.py#L30)
+
+- Se homologa el borde de expiración legacy con el flujo moderno.
+  [`budget_use_cases.py:111`](../../app/application/use_cases/budget_use_cases.py#L111)
+
+**Cobertura de inmutabilidad**
+
+- Prueba principal: cambios de precio no alteran cotizaciones ya emitidas.
+  [`test_budgets.py:93`](../../tests/test_budgets.py#L93)
+
+- Se asegura contrato 422 para SKU inexistente en creación.
+  [`test_budgets.py:169`](../../tests/test_budgets.py#L169)
+
+**Soporte y trazabilidad**
+
+- Documenta comportamiento 410 y montos congelados para consumidores API.
+  [`README.md:182`](../../README.md#L182)
+
+- Registra la iteración y alcance exacto de la historia 2.3.
+  [`.agents/changelog.md:7`](../../.agents/changelog.md#L7)

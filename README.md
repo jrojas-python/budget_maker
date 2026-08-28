@@ -179,7 +179,7 @@ GET /api/v1/products/search?q=tornillo&tags=metal
 |--------|------|------|-------------|
 | GET | `/api/v1/budgets/` | — | Listar presupuestos |
 | POST | `/api/v1/budgets/` | Bearer | Crear presupuesto |
-| GET | `/api/v1/budgets/{uuid}` | — | Obtener presupuesto por UUID |
+| GET | `/api/v1/budgets/{uuid}` | — | Obtener presupuesto por UUID (retorna 410 si expiró) |
 
 ### Configuración Global
 | Método | Ruta | Auth | Descripción |
@@ -241,6 +241,7 @@ Los tests usan una BD separada (`budget_maker_test`) que se elimina al finalizar
 ## Notas Técnicas
 
 - Los links de presupuesto toman el TTL vigente al momento de creación (`link_ttl_minutes`) y no cambian retroactivamente.
+- Los montos de cotización (`unit_cost`, `line_total`, `subtotal`, `tax_amount`, `total`) se congelan al crear el presupuesto y no se recalculan después.
 - Las imágenes se almacenan en `uploads/products/` (montado como volumen Docker)
 - Formatos de imagen permitidos: PNG, JPEG, WebP. Tamaño máximo: 2MB
 - Cada producto soporta entre 0 y 10 imagenes; la API responde `image_urls` con URLs absolutas

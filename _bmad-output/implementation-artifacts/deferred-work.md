@@ -9,3 +9,11 @@
 - source_spec: `C:\Users\JesusRojas\Documents\pyfiles\budget_maker\_bmad-output\implementation-artifacts\spec-1-1-configuracion-global-tipada-del-negocio.md`
   summary: Asegurar creación previa de directorio `uploads` antes de montar `StaticFiles` para evitar fallo de arranque en entornos limpios.
   evidence: Hallazgo de revisión sobre orden de inicialización en `main.py` no ligado al objetivo de configuración tipada de esta historia.
+
+- source_spec: `spec-2-2-identificacion-publica-y-expiracion-del-presupuesto.md`
+  summary: La ruta PDF publica /presupuesto/{uuid}/pdf no bloquea acceso a presupuestos expirados
+  evidence: El endpoint GET /{uuid} ahora devuelve 410 para expirados, pero la ruta PDF no aplica la misma regla
+
+- source_spec: `C:\Users\JesusRojas\Documents\pyfiles\budget_maker\_bmad-output\implementation-artifacts\spec-2-3-calculo-inmutable-de-montos-de-cotizacion.md`
+  summary: Alinear la descarga pública de PDF con la política de expiración del presupuesto.
+  evidence: La validación de expiración está en `GET /api/v1/budgets/{uuid}`, pero `web/views.py` en `/presupuesto/{uuid}/pdf` no aplica el mismo bloqueo.

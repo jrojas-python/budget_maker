@@ -53,19 +53,21 @@ async def test_existing_budget_not_recalculated_after_config_change(client: Asyn
 
     await _create_product(client, auth_headers)
 
-    await client.put(
+    first_config = await client.put(
         "/api/v1/config/global",
         json={"tax_rate": 10, "link_ttl_minutes": 15, "show_product_photos_in_pdf": True},
         headers=auth_headers,
     )
+    assert first_config.status_code == 200
     first = await client.post("/api/v1/budgets/", json=_budget_payload())
     first_budget = first.json()
 
-    await client.put(
+    second_config = await client.put(
         "/api/v1/config/global",
         json={"tax_rate": 20, "link_ttl_minutes": 1, "show_product_photos_in_pdf": False},
         headers=auth_headers,
     )
+    assert second_config.status_code == 200
     second = await client.post("/api/v1/budgets/", json=_budget_payload())
     second_budget = second.json()
 
@@ -92,11 +94,12 @@ async def test_existing_budget_not_recalculated_after_product_cost_change(client
     """Cambiar costo en catálogo no altera montos de presupuestos ya emitidos."""
     product = await _create_product(client, auth_headers)
 
-    await client.put(
+    update_config = await client.put(
         "/api/v1/config/global",
         json={"tax_rate": 10, "link_ttl_minutes": 30, "show_product_photos_in_pdf": True},
         headers=auth_headers,
     )
+    assert update_config.status_code == 200
 
     first = await client.post("/api/v1/budgets/", json=_budget_payload())
     assert first.status_code == 201
@@ -187,11 +190,12 @@ async def test_create_budget_without_payment_method(client: AsyncClient, auth_he
 async def test_create_budget_persists_expires_at(client: AsyncClient, auth_headers: dict):
     """Al crear presupuesto, expires_at se persiste como created_at + TTL."""
     await _create_product(client, auth_headers)
-    await client.put(
+    update_global = await client.put(
         "/api/v1/config/global",
         json={"tax_rate": 10, "link_ttl_minutes": 60, "show_product_photos_in_pdf": True},
         headers=auth_headers,
     )
+    assert update_global.status_code == 200
 
     res = await client.post("/api/v1/budgets/", json=_budget_payload())
     assert res.status_code == 201
