@@ -17,3 +17,7 @@
 - source_spec: `C:\Users\JesusRojas\Documents\pyfiles\budget_maker\_bmad-output\implementation-artifacts\spec-2-3-calculo-inmutable-de-montos-de-cotizacion.md`
   summary: Alinear la descarga pública de PDF con la política de expiración del presupuesto.
   evidence: La validación de expiración está en `GET /api/v1/budgets/{uuid}`, pero `web/views.py` en `/presupuesto/{uuid}/pdf` no aplica el mismo bloqueo.
+
+## Deferred from: code review of spec-2-5-enlace-de-whatsapp-para-compartir-cotizacion.md (2026-08-28)
+
+- Falta cobertura E2E del flujo JavaScript de catálogo para asegurar que `#modal-whatsapp` salga habilitado con URL canónica después de crear presupuesto; hoy la suite valida backend y vista pública, pero no ejecuta `catalog.js`.

@@ -1,0 +1,561 @@
+﻿diff --git a/.agents/changelog.md b/.agents/changelog.md
+index 95652e0..7c3dc97 100644
+--- a/.agents/changelog.md
++++ b/.agents/changelog.md
+@@ -4,6 +4,27 @@ Registro de iteraciones del proyecto.
+ 
+ ---
+ 
++## [2026-08-28] Iteración 8 — Historia 2.5 enlace canónico de WhatsApp
++
++### Realizado
++- Se reemplazó la composición de WhatsApp por un builder canónico en backend (`BudgetUseCases.generate_whatsapp_share_url`) con formato `wa.me` URL-encoded UTF-8 e inclusión explícita de empresa, código, total y link temporal.
++- Se unificó la vista pública para construir el link temporal con `request.url_for(...)` y delegar la URL de WhatsApp al builder backend usando `site_title` del contexto render.
++- Se incorporó el endpoint `GET /api/v1/budgets/{uuid}/whatsapp-share` para que el flujo de catálogo consuma exactamente el mismo formato canónico sin duplicar lógica en JavaScript.
++- Se eliminó el armado manual del mensaje WhatsApp en `web/static/js/catalog.js` y se reemplazó por consumo del endpoint backend.
++- Se añadieron pruebas de presupuesto para validar formato canónico, fallback de empresa, encoding de caracteres especiales y consistencia entre flujo API y vista web.
++- Se documentó en README el endpoint de compartición y la política de formato canónico.
++
++### Archivos modificados
++- `app/application/use_cases/budget_use_cases.py`
++- `app/api/v1/budgets.py`
++- `web/views.py`
++- `web/static/js/catalog.js`
++- `tests/test_budgets.py`
++- `README.md`
++- `.agents/changelog.md`
++
++---
++
+ ## [2026-08-28] Iteración 7 — Historia 2.4 PDF profesional configurable
+ 
+ ### Realizado
+diff --git a/README.md b/README.md
+index d5017f3..a2e675d 100644
+--- a/README.md
++++ b/README.md
+@@ -181,6 +181,15 @@ GET /api/v1/products/search?q=tornillo&tags=metal
+ | POST | `/api/v1/budgets/` | Bearer | Crear presupuesto |
+ | GET | `/api/v1/budgets/{uuid}` | — | Obtener presupuesto por UUID (retorna 410 si expiró) |
+ | GET | `/api/v1/budgets/{uuid}/pdf` | No | Descargar PDF (404 si no existe, 410 si expira) |
++| GET | `/api/v1/budgets/{uuid}/whatsapp-share` | — | Obtener enlace canónico `wa.me` para compartir (404/410 según vigencia) |
++
++Ejemplo de respuesta `GET /api/v1/budgets/{uuid}/whatsapp-share`:
++
++```json
++{
++  "whatsapp_url": "https://wa.me/?text=Empresa%3A%20Mi%20Empresa%0AC%C3%B3digo%3A%20BM-20260828-AB12%0ATotal%3A%20%24123.45%0ALink%3A%20http%3A%2F%2Flocalhost%3A8000%2Fpresupuesto%2F550e8400-e29b-41d4-a716-446655440000"
++}
++```
+ 
+ ### Configuración Global
+ | Método | Ruta | Auth | Descripción |
+@@ -244,6 +253,7 @@ Los tests usan una BD separada (`budget_maker_test`) que se elimina al finalizar
+ - Los links de presupuesto toman el TTL vigente al momento de creación (`link_ttl_minutes`) y no cambian retroactivamente.
+ - Los montos de cotización (`unit_cost`, `line_total`, `subtotal`, `tax_amount`, `total`) se congelan al crear el presupuesto y no se recalculan después.
+ - La generación de PDF aplica branding en servidor (`site_logo`, `site_title`, `site_subtitle`) y no depende de JavaScript cliente.
++- El enlace de WhatsApp se genera en backend con formato canónico `https://wa.me/?text={url_encoded_text}` e incluye empresa, código, total y link temporal.
+ - La visibilidad de fotos en PDF está gobernada por `show_product_photos_in_pdf`; si está en `false`, se oculta la columna completa.
+ - En rutas de descarga PDF (`/api/v1/budgets/{uuid}/pdf` y `/presupuesto/{uuid}/pdf`) los presupuestos expirados retornan HTTP 410.
+ - Las imágenes se almacenan en `uploads/products/` (montado como volumen Docker)
+diff --git a/_bmad-output/implementation-artifacts/spec-2-5-enlace-de-whatsapp-para-compartir-cotizacion.md b/_bmad-output/implementation-artifacts/spec-2-5-enlace-de-whatsapp-para-compartir-cotizacion.md
+new file mode 100644
+index 0000000..bb34d82
+--- /dev/null
++++ b/_bmad-output/implementation-artifacts/spec-2-5-enlace-de-whatsapp-para-compartir-cotizacion.md
+@@ -0,0 +1,115 @@
++---
++title: '2.5 Enlace de WhatsApp para compartir cotizacion'
++type: 'feature'
++created: '2026-08-28'
++status: 'done'
++review_loop_iteration: 0
++baseline_commit: 'b30a12393d63a6facbe6f5482f5a30bb0ae572c5'
++context:
++  - '{project-root}/_bmad-output/implementation-artifacts/epic-2-context.md'
++---
++
++<frozen-after-approval reason="human-owned intent — do not modify unless human renegotiates">
++
++## Intent
++
++**Problem:** La historia 2.5 requiere un enlace de WhatsApp consistente con formato `https://wa.me/?text={url_encoded_text}` que incluya empresa, código de cotización, total y link temporal. Hoy existen dos flujos distintos (backend y frontend) con formato divergente: uno no incluye link temporal y otro no incluye empresa dinámica.
++
++**Approach:** Unificar la construcción del mensaje de WhatsApp en backend para que web pública y flujo de catálogo usen el mismo formato canónico, tomando `site_title` desde configuración global, manteniendo código/total del presupuesto congelado y añadiendo el enlace temporal público de la cotización en el texto codificado.
++
++## Boundaries & Constraints
++
++**Always:** Preservar compatibilidad con historias 2.1/2.2/2.3/2.4; mantener `wa.me` con encoding URL correcto UTF-8; usar `site_title` desde configuración con fallback razonable; incluir exactamente empresa, código, total y link temporal en el texto; mantener arquitectura asíncrona y separación de capas.
++
++**Ask First:** Si para unificar el flujo hace falta cambiar el contrato público de la API de presupuestos (por ejemplo, exponer `whatsapp_url` en `BudgetResponse`) o alterar de forma visible el copy comercial más allá de los campos obligatorios.
++
++**Never:** No recalcular montos; no cambiar la lógica de expiración; no introducir librerías nuevas para encoding; no mantener dos formatos paralelos backend/frontend para el mismo mensaje.
++
++## I/O & Edge-Case Matrix
++
++| Scenario | Input / State | Expected Output / Behavior | Error Handling |
++|----------|--------------|---------------------------|----------------|
++| Enlace válido mínimo | Presupuesto vigente con `site_title` configurado | Se retorna URL `https://wa.me/?text=...` con empresa, código, total y link temporal | N/A |
++| Fallback de empresa | `site_title` vacío/no definido | Mensaje usa nombre por defecto del sistema y conserva demás campos | N/A |
++| Caracteres especiales | Texto con acentos/ñ/espacios/saltos de línea | URL queda correctamente percent-encoded y navegable por WhatsApp | N/A |
++| Flujo unificado web | Vista pública y modal de catálogo para mismo presupuesto | Ambos muestran el mismo mensaje/formato canónico | Si no hay presupuesto válido, mantener errores existentes (404/410) |
++
++</frozen-after-approval>
++
++## Code Map
++
++- `app/application/use_cases/budget_use_cases.py` -- `generate_whatsapp_text` (actual L144+) debe pasar a builder canónico con empresa dinámica y link temporal.
++- `app/application/use_cases/budget_use_cases.py` -- `build_budget_render_context` ya lee `site_title`; reutilizable para evitar duplicar lectura de config.
++- `web/views.py` -- `view_budget` construye `whatsapp_url`; debe usar el builder unificado con URL temporal explícita.
++- `web/static/js/catalog.js` -- hoy arma mensaje propio en cliente; punto crítico para eliminar divergencia con backend.
++- `web/templates/public/budget_view.html` -- consume `whatsapp_url`; validar que no rompe flujo web existente.
++- `app/api/v1/budgets.py` -- evaluar si conviene exponer/centralizar helper de share sin alterar contratos no acordados.
++- `tests/test_budgets.py` -- agregar cobertura de formato canónico y encoding (incluyendo caracteres internacionales y presencia de link temporal).
++- `_bmad-output/implementation-artifacts/spec-2-4-generacion-de-pdf-profesional-configurable.md` -- continuidad: preservar estructura de render y comportamiento de rutas públicas.
++
++## Tasks & Acceptance
++
++**Execution:**
++- [x] `app/application/use_cases/budget_use_cases.py` -- crear/ajustar builder canónico de mensaje WhatsApp que reciba presupuesto + URL temporal y produzca `wa.me` con empresa dinámica, código y total -- establece una sola fuente de verdad.
++- [x] `web/views.py` -- construir URL temporal pública y delegar generación del texto al builder backend -- unifica salida de la vista de presupuesto.
++- [x] `web/static/js/catalog.js` -- reemplazar armado manual del mensaje por uso del formato/backend canónico (o consumir payload ya construido) -- elimina divergencia entre flujos.
++- [x] `web/templates/public/budget_view.html` -- mantener botón de WhatsApp usando el enlace unificado sin cambios de UX no requeridos -- conserva navegación actual.
++- [x] `tests/test_budgets.py` -- cubrir matriz I/O: formato `wa.me`, presencia de empresa/código/total/link temporal, fallback de empresa y encoding de caracteres especiales -- evita regresiones funcionales.
++- [x] `README.md` + `.agents/changelog.md` -- documentar formato del enlace WhatsApp y registrar iteración 2.5 -- mantiene trazabilidad.
++
++**Acceptance Criteria:**
++- Given un presupuesto vigente con configuración de empresa, when se genera el enlace de WhatsApp, then el resultado usa `https://wa.me/?text=` e incluye empresa, código, total y link temporal.
++- Given un presupuesto vigente sin `site_title` definido, when se genera el enlace, then se usa fallback de empresa sin romper el enlace.
++- Given datos con caracteres especiales, when se genera el enlace, then el texto queda correctamente URL-encoded.
++- Given los flujos de vista pública y catálogo, when generan enlace para una misma cotización, then ambos producen el mismo formato canónico.
++
++## Spec Change Log
++
++## Design Notes
++
++La principal decisión de diseño es evitar doble implementación del mismo mensaje (Python y JavaScript) porque eso ya causó drift funcional frente al AC. El formato debe ser único y derivado del backend, que conoce estado de negocio y branding.
++
++El enlace temporal debe apuntar a la vista pública (`/presupuesto/{uuid}`), respetando expiración ya implementada. La historia 2.5 no modifica control de acceso ni vida útil; solo estandariza la composición del mensaje.
++
++## Verification
++
++**Commands:**
++- `uv run python -m pytest tests/test_budgets.py -q` -- expected: pasan pruebas nuevas y existentes de presupuestos/compartición.
++- `uv run python -m pytest -q` -- expected: sin regresiones en el sistema.
++
++## Suggested Review Order
++
++**Punto de entrada del enlace canónico**
++
++- Endpoint dedicado centraliza contrato 404/410 y payload tipado.
++  [`budgets.py:85`](../../app/api/v1/budgets.py#L85)
++
++- Modelo de salida fija shape de respuesta para OpenAPI y clientes.
++  [`budget.py:35`](../../app/domain/schemas/budget.py#L35)
++
++**Generación de mensaje en backend**
++
++- Builder canónico incorpora empresa, código, total y link temporal.
++  [`budget_use_cases.py:146`](../../app/application/use_cases/budget_use_cases.py#L146)
++
++- Sanitización garantiza fallback robusto para `site_title` vacío.
++  [`budget_use_cases.py:198`](../../app/application/use_cases/budget_use_cases.py#L198)
++
++**Integración en superficies web**
++
++- Vista pública delega a builder unificado y evita divergencias.
++  [`views.py:44`](../../web/views.py#L44)
++
++- Catálogo consume endpoint backend y bloquea botón ante fallo.
++  [`catalog.js:297`](../../web/static/js/catalog.js#L297)
++
++**Cobertura y documentación**
++
++- Pruebas cubren formato, fallback, encoding y errores 404/410.
++  [`test_budgets.py:386`](../../tests/test_budgets.py#L386)
++
++- README documenta endpoint y ejemplo de respuesta canónica.
++  [`README.md:184`](../../README.md#L184)
++
++- Changelog registra iteración y alcance de la historia 2.5.
++  [`.agents/changelog.md:7`](../../.agents/changelog.md#L7)
+diff --git a/_bmad-output/implementation-artifacts/sprint-status.yaml b/_bmad-output/implementation-artifacts/sprint-status.yaml
+index 6ccfcad..12708d6 100644
+--- a/_bmad-output/implementation-artifacts/sprint-status.yaml
++++ b/_bmad-output/implementation-artifacts/sprint-status.yaml
+@@ -49,5 +49,5 @@ development_status:
+   2-2-identificación-pública-y-expiración-del-presupuesto: review
+   2-3-cálculo-inmutable-de-montos-de-cotización: review
+   2-4-generación-de-pdf-profesional-configurable: review
+-  2-5-enlace-de-whatsapp-para-compartir-cotización: backlog
++  2-5-enlace-de-whatsapp-para-compartir-cotización: review
+   epic-2-retrospective: optional
+diff --git a/app/api/v1/budgets.py b/app/api/v1/budgets.py
+index 7d3fb90..366c46c 100644
+--- a/app/api/v1/budgets.py
++++ b/app/api/v1/budgets.py
+@@ -8,7 +8,7 @@ from fastapi import Request
+ from app.application.use_cases.budget_use_cases import BudgetUseCases
+ from app.api.dependencies import get_budget_use_cases
+ from app.domain.models.budget import Budget
+-from app.domain.schemas.budget import BudgetCreate, BudgetResponse
++from app.domain.schemas.budget import BudgetCreate, BudgetResponse, BudgetWhatsappShareResponse
+ 
+ router = APIRouter(prefix="/api/v1/budgets", tags=["Presupuestos"])
+ templates = Jinja2Templates(directory="web/templates")
+@@ -82,6 +82,21 @@ async def download_budget_pdf(
+     )
+ 
+ 
++@router.get("/{uuid}/whatsapp-share", response_model=BudgetWhatsappShareResponse)
++async def get_budget_whatsapp_share(
++    uuid: str,
++    request: Request,
++    uc: BudgetUseCases = Depends(get_budget_use_cases),
++):
++    budget = await _get_active_budget_or_raise(uuid, uc)
++    public_budget_url = str(request.url_for("view_budget", uuid=budget.uuid))
++    whatsapp_url = await uc.generate_whatsapp_share_url(
++        budget=budget,
++        public_budget_url=public_budget_url,
++    )
++    return BudgetWhatsappShareResponse(whatsapp_url=whatsapp_url)
++
++
+ async def _get_active_budget_or_raise(uuid: str, uc: BudgetUseCases) -> Budget:
+     budget = await uc.get_by_uuid(uuid)
+     if not budget:
+diff --git a/app/application/use_cases/budget_use_cases.py b/app/application/use_cases/budget_use_cases.py
+index 31831ed..52ec37b 100644
+--- a/app/application/use_cases/budget_use_cases.py
++++ b/app/application/use_cases/budget_use_cases.py
+@@ -18,6 +18,8 @@ from settings.config import settings
+ class BudgetUseCases:
+     """Casos de uso para presupuestos/cotizaciones."""
+ 
++    _DEFAULT_SITE_TITLE = "BUDGET MAKER"
++
+     def __init__(
+         self,
+         budget_repo: BudgetRepository,
+@@ -116,7 +118,7 @@ class BudgetUseCases:
+     async def build_budget_render_context(self, budget: Budget, for_pdf: bool) -> dict[str, Any]:
+         """Construye contexto de render para web/PDF usando configuración global."""
+         config = await self._config_repo.get_effective_global_config()
+-        site_title = str(config.extra_settings.get("site_title", "BUDGET MAKER"))
++        site_title = self._sanitize_site_title(str(config.extra_settings.get("site_title", self._DEFAULT_SITE_TITLE)))
+         site_subtitle = str(config.extra_settings.get("site_subtitle", "")).strip()
+         show_photos = bool(config.show_product_photos_in_pdf)
+ 
+@@ -141,29 +143,31 @@ class BudgetUseCases:
+     def generate_pdf(self, html_content: str, base_url: str | None = None) -> bytes:
+         return self._pdf.generate_from_html(html_content, base_url=base_url)
+ 
+-    def generate_whatsapp_text(self, budget: Budget) -> str:
+-        """Genera el texto formateado para compartir por WhatsApp."""
+-        total_lines = len(budget.items)
+-        total_units = sum(item.quantity for item in budget.items)
+-        client_name = f"{budget.client_info.nombres} {budget.client_info.apellidos}".strip()
+-        fecha = budget.created_at.strftime("%d/%m/%Y")
+-
+-        lines = [
+-            f"*COTIZACIÓN {budget.code}*",
+-            "BUDGET MAKER",
+-            f"Cliente: {client_name}",
+-            f"Fecha: {fecha}",
+-            f"*{total_lines} líneas · {total_units} unidades*",
+-        ]
+-        for item in budget.items:
+-            color_info = f" · {item.color_name} ({item.color_hex})" if item.color_name else ""
+-            lines.append(f"• {item.sku} · {item.name}{color_info} · {item.quantity}x ${item.unit_cost:.2f}")
+-        lines.append("*TOTALES:*")
+-        lines.append(f"Subtotal: ${budget.subtotal:.2f}")
+-        lines.append(f"Total con impuestos: ${budget.total:.2f}")
+-
+-        text = "\n".join(lines)
+-        return f"https://wa.me/?text={urllib.parse.quote(text)}"
++    async def generate_whatsapp_share_url(
++        self,
++        budget: Budget,
++        public_budget_url: str,
++        site_title: str | None = None,
++    ) -> str:
++        """Genera URL canónica de WhatsApp para compartir la cotización."""
++        if not public_budget_url or not public_budget_url.strip():
++            raise ValueError("public_budget_url requerido")
++
++        company_name = site_title
++        if company_name is None:
++            config = await self._config_repo.get_effective_global_config()
++            company_name = str(config.extra_settings.get("site_title", self._DEFAULT_SITE_TITLE))
++        company_name = self._sanitize_site_title(company_name)
++
++        text = "\n".join(
++            [
++                f"Empresa: {company_name}",
++                f"Código: {budget.code}",
++                f"Total: ${budget.total:.2f}",
++                f"Link: {public_budget_url}",
++            ]
++        )
++        return f"https://wa.me/?text={urllib.parse.quote(text, safe='')}"
+ 
+     def _generate_code(self) -> str:
+         today = datetime.now(timezone.utc).strftime("%Y%m%d")
+@@ -191,6 +195,12 @@ class BudgetUseCases:
+             return value
+         return None
+ 
++    def _sanitize_site_title(self, site_title: str) -> str:
++        value = str(site_title or "").strip()
++        if value:
++            return value
++        return self._DEFAULT_SITE_TITLE
++
+     async def _resolve_product_image(self, sku: str, for_pdf: bool) -> str | None:
+         product = await self._product_repo.get_by_sku(sku)
+         if not product:
+diff --git a/app/domain/schemas/budget.py b/app/domain/schemas/budget.py
+index 7652a1b..715eb89 100644
+--- a/app/domain/schemas/budget.py
++++ b/app/domain/schemas/budget.py
+@@ -30,3 +30,7 @@ class BudgetResponse(BaseModel):
+     link_ttl_minutes: int
+     created_at: datetime
+     expires_at: datetime | None = None
++
++
++class BudgetWhatsappShareResponse(BaseModel):
++    whatsapp_url: str
+diff --git a/tests/test_budgets.py b/tests/test_budgets.py
+index ac183bc..e34d8df 100644
+--- a/tests/test_budgets.py
++++ b/tests/test_budgets.py
+@@ -1,5 +1,6 @@
+ from datetime import datetime, timedelta, timezone
+ from pathlib import Path
++from urllib.parse import parse_qs, urlparse
+ 
+ import pytest
+ from httpx import AsyncClient
+@@ -38,6 +39,16 @@ async def _expire_budget(uuid: str) -> None:
+     await model.save()
+ 
+ 
++def _extract_whatsapp_text(whatsapp_url: str) -> str:
++    parsed = urlparse(whatsapp_url)
++    assert parsed.scheme == "https"
++    assert parsed.netloc == "wa.me"
++    assert parsed.path == "/"
++    text_param = parse_qs(parsed.query).get("text")
++    assert text_param
++    return text_param[0]
++
++
+ @pytest.mark.asyncio
+ async def test_new_budget_uses_updated_tax_and_ttl(client: AsyncClient, auth_headers: dict):
+     await _create_product(client, auth_headers)
+@@ -349,6 +360,101 @@ async def test_web_budget_view_returns_html_for_active_budget(client: AsyncClien
+     assert budget["code"] in res.text
+ 
+ 
++@pytest.mark.asyncio
++async def test_whatsapp_share_uses_canonical_format(client: AsyncClient, auth_headers: dict):
++    await _create_product(client, auth_headers)
++    await client.put(
++        "/api/v1/config/site_title",
++        json={"value": "Compañía Ñandú", "description": "Nombre comercial"},
++        headers=auth_headers,
++    )
++    created = await client.post("/api/v1/budgets/", json=_budget_payload())
++    budget = created.json()
++
++    res = await client.get(f"/api/v1/budgets/{budget['uuid']}/whatsapp-share")
++    assert res.status_code == 200
++    whatsapp_url = res.json()["whatsapp_url"]
++    text = _extract_whatsapp_text(whatsapp_url)
++
++    assert f"Empresa: Compañía Ñandú" in text
++    assert f"Código: {budget['code']}" in text
++    assert f"Total: ${budget['total']:.2f}" in text
++    assert f"Link: http://test/presupuesto/{budget['uuid']}" in text
++
++
++@pytest.mark.asyncio
++async def test_whatsapp_share_returns_404_when_budget_not_found(client: AsyncClient):
++    res = await client.get("/api/v1/budgets/00000000-0000-0000-0000-000000000000/whatsapp-share")
++    assert res.status_code == 404
++
++
++@pytest.mark.asyncio
++async def test_whatsapp_share_returns_410_when_budget_expired(client: AsyncClient, auth_headers: dict):
++    await _create_product(client, auth_headers)
++    created = await client.post("/api/v1/budgets/", json=_budget_payload())
++    budget_uuid = created.json()["uuid"]
++    await _expire_budget(budget_uuid)
++
++    res = await client.get(f"/api/v1/budgets/{budget_uuid}/whatsapp-share")
++    assert res.status_code == 410
++    assert "expirado" in res.json()["detail"].lower()
++
++
++@pytest.mark.asyncio
++async def test_whatsapp_share_fallbacks_site_title(client: AsyncClient, auth_headers: dict):
++    await _create_product(client, auth_headers)
++    await client.put(
++        "/api/v1/config/site_title",
++        json={"value": "   ", "description": "Vacío para fallback"},
++        headers=auth_headers,
++    )
++    created = await client.post("/api/v1/budgets/", json=_budget_payload())
++    budget = created.json()
++
++    res = await client.get(f"/api/v1/budgets/{budget['uuid']}/whatsapp-share")
++    assert res.status_code == 200
++    text = _extract_whatsapp_text(res.json()["whatsapp_url"])
++    assert "Empresa: BUDGET MAKER" in text
++
++
++@pytest.mark.asyncio
++async def test_whatsapp_share_encodes_special_characters(client: AsyncClient, auth_headers: dict):
++    await _create_product(client, auth_headers)
++    await client.put(
++        "/api/v1/config/site_title",
++        json={"value": "Compañía Perú Ñ", "description": "Acentos"},
++        headers=auth_headers,
++    )
++    payload = _budget_payload()
++    payload["client_info"]["nombres"] = "José"
++    created = await client.post("/api/v1/budgets/", json=payload)
++    budget = created.json()
++
++    res = await client.get(f"/api/v1/budgets/{budget['uuid']}/whatsapp-share")
++    assert res.status_code == 200
++    whatsapp_url = res.json()["whatsapp_url"]
++    assert " " not in whatsapp_url
++    assert "Compañía" not in whatsapp_url
++    assert "Ñ" not in whatsapp_url
++    text = _extract_whatsapp_text(whatsapp_url)
++    assert "Compañía Perú Ñ" in text
++
++
++@pytest.mark.asyncio
++async def test_web_and_api_use_same_whatsapp_format(client: AsyncClient, auth_headers: dict):
++    await _create_product(client, auth_headers)
++    created = await client.post("/api/v1/budgets/", json=_budget_payload())
++    budget = created.json()
++
++    share_res = await client.get(f"/api/v1/budgets/{budget['uuid']}/whatsapp-share")
++    assert share_res.status_code == 200
++    whatsapp_url = share_res.json()["whatsapp_url"]
++
++    web_res = await client.get(f"/presupuesto/{budget['uuid']}")
++    assert web_res.status_code == 200
++    assert f'href="{whatsapp_url}"' in web_res.text
++
++
+ @pytest.mark.asyncio
+ async def test_pdf_hides_photo_column_when_config_is_disabled(client: AsyncClient, auth_headers: dict, monkeypatch: pytest.MonkeyPatch):
+     from app.api.dependencies import _pdf_service
+diff --git a/web/static/js/catalog.js b/web/static/js/catalog.js
+index b55ad67..f5162e2 100644
+--- a/web/static/js/catalog.js
++++ b/web/static/js/catalog.js
+@@ -284,20 +284,7 @@ async function createBudget() {
+         const baseUrl = window.location.origin;
+         document.getElementById('modal-link').href = baseUrl + '/presupuesto/' + b.uuid;
+         document.getElementById('modal-pdf').href = baseUrl + '/presupuesto/' + b.uuid + '/pdf';
+-
+-        const clientName = (b.client_info.nombres + ' ' + b.client_info.apellidos).trim();
+-        let waLines = [
+-            `*COTIZACIÓN ${b.code}*`, `Cliente: ${clientName}`,
+-            `Fecha: ${document.getElementById('modal-date').textContent}`,
+-            `*${b.items.length} líneas · ${b.items.reduce((s, i) => s + i.quantity, 0)} unidades*`, '',
+-        ];
+-        b.items.forEach(it => {
+-            const colorTxt = it.color_name ? ` · ${it.color_name}` : '';
+-            waLines.push(`• ${it.sku} · ${it.name}${colorTxt} · ${it.quantity}x $${it.unit_cost.toFixed(2)}`);
+-        });
+-        waLines.push('', '*TOTALES:*', `Subtotal: $${b.subtotal.toFixed(2)}`, `Total: $${b.total.toFixed(2)}`);
+-        waLines.push('', `Ver online: ${baseUrl}/presupuesto/${b.uuid}`);
+-        document.getElementById('modal-whatsapp').href = 'https://wa.me/?text=' + encodeURIComponent(waLines.join('\n'));
++        await loadWhatsappShareUrl(b.uuid);
+ 
+         document.getElementById('budget-modal').classList.remove('hidden');
+         showToast('Presupuesto creado: ' + b.code);
+@@ -307,6 +294,39 @@ async function createBudget() {
+     }
+ }
+ 
++async function loadWhatsappShareUrl(uuid) {
++    const waButton = document.getElementById('modal-whatsapp');
++    waButton.href = '#';
++    waButton.setAttribute('aria-disabled', 'true');
++    waButton.classList.add('is-disabled');
++    try {
++        const res = await apiFetch(`/api/v1/budgets/${uuid}/whatsapp-share`);
++        if (!res.ok) {
++            if (res.status === 410) {
++                showToast('La cotización expiró y no se puede compartir', 'error');
++            } else if (res.status === 404) {
++                showToast('No se encontró la cotización para compartir', 'error');
++            } else {
++                showToast('No se pudo generar enlace de WhatsApp', 'error');
++            }
++            return;
++        }
++        const data = await res.json();
++        const url = String(data.whatsapp_url || '');
++        if (url.startsWith('https://wa.me/?text=')) {
++            waButton.href = url;
++            waButton.removeAttribute('aria-disabled');
++            waButton.classList.remove('is-disabled');
++            return;
++        }
++        showToast('No se pudo generar enlace de WhatsApp', 'error');
++        console.error('Formato de URL de WhatsApp inválido');
++    } catch {
++        showToast('No se pudo generar enlace de WhatsApp', 'error');
++        console.error('Error al generar enlace de WhatsApp');
++    }
++}
++
+ function closeModal() {
+     document.getElementById('budget-modal').classList.add('hidden');
+     Object.keys(cart).forEach(sku => delete cart[sku]);
+diff --git a/web/static/styles.css b/web/static/styles.css
+index 0c343a1..c10ec2c 100644
+--- a/web/static/styles.css
++++ b/web/static/styles.css
+@@ -115,6 +115,12 @@ h1 {
+     opacity: 0.85;
+ }
+ 
++.btn.is-disabled {
++    opacity: 0.5;
++    pointer-events: none;
++    cursor: not-allowed;
++}
++
+ .btn-pdf {
+     background: #e74c3c;
+     color: white;
+diff --git a/web/views.py b/web/views.py
+index dc0c7af..bd8dfb3 100644
+--- a/web/views.py
++++ b/web/views.py
+@@ -40,8 +40,13 @@ async def view_budget(uuid: str, request: Request, uc: BudgetUseCases = Depends(
+     if await uc.is_expired(budget):
+         return templates.TemplateResponse("public/budget_expired.html", {"request": request, "code": budget.code})
+ 
+-    whatsapp_url = uc.generate_whatsapp_text(budget)
+     render_context = await uc.build_budget_render_context(budget, for_pdf=False)
++    public_budget_url = str(request.url_for("view_budget", uuid=budget.uuid))
++    whatsapp_url = await uc.generate_whatsapp_share_url(
++        budget=budget,
++        public_budget_url=public_budget_url,
++        site_title=render_context["site_title"],
++    )
+     return templates.TemplateResponse(
+         "public/budget_view.html",
+         {

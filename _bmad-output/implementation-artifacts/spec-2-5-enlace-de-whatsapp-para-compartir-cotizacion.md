@@ -63,6 +63,10 @@ context:
 - Given datos con caracteres especiales, when se genera el enlace, then el texto queda correctamente URL-encoded.
 - Given los flujos de vista pública y catálogo, when generan enlace para una misma cotización, then ambos producen el mismo formato canónico.
 
+### Review Findings
+
+- [x] [Review][Defer] Cobertura E2E del flujo JS de catálogo para WhatsApp [web/static/js/catalog.js:297] — deferred, pre-existing
+
 ## Spec Change Log
 
 ## Design Notes
