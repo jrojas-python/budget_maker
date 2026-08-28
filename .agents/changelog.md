@@ -4,6 +4,29 @@ Registro de iteraciones del proyecto.
 
 ---
 
+## [2026-08-28] Iteración 10 — Historia 2.2 identificación pública y expiración
+
+### Realizado
+- Se endureció el modelo `Budget` con índices únicos en MongoDB para `code` y `uuid`, garantizando unicidad persistente de identificadores públicos.
+- Se tiparon como `UUID4` las rutas públicas/API de presupuesto y PDF/WhatsApp, habilitando rechazo automático con HTTP 422 para UUID malformado antes de ejecutar lógica de consulta.
+- Se incorporó manejo explícito de colisiones de identificadores: el repositorio detecta `DuplicateKeyError`, la capa de aplicación reintenta de forma acotada ante colisión de `code` y falla explícitamente para colisiones de `uuid`.
+- Se actualizó el contrato API para responder HTTP 409 en colisiones de identificador público durante creación de presupuestos.
+- Se añadieron pruebas para UUID inválido (422), reintento ante colisión de `code` y falla explícita por colisión de `uuid` (409).
+- Se documentó en README la política de unicidad, validación UUID en frontera HTTP y comportamiento de reintento.
+
+### Archivos modificados
+- `app/domain/models/budget.py`
+- `app/domain/schemas/budget.py`
+- `app/infrastructure/repositories/budget_repo.py`
+- `app/application/use_cases/budget_use_cases.py`
+- `app/api/v1/budgets.py`
+- `web/views.py`
+- `tests/test_budgets.py`
+- `README.md`
+- `.agents/changelog.md`
+
+---
+
 ## [2026-08-28] Iteración 9 — Code review Story 2.4 (hardening y cobertura)
 
 ### Realizado

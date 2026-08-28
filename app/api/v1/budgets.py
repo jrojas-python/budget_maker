@@ -4,10 +4,11 @@ from fastapi.templating import Jinja2Templates
 from io import BytesIO
 from pathlib import Path
 from fastapi import Request
+from pydantic import UUID4
 
 from app.application.use_cases.budget_use_cases import BudgetUseCases
 from app.api.dependencies import get_budget_use_cases
-from app.domain.models.budget import Budget
+from app.domain.models.budget import Budget, BudgetIdentifierCollisionError
 from app.domain.schemas.budget import BudgetCreate, BudgetResponse, BudgetWhatsappShareResponse
 
 router = APIRouter(prefix="/api/v1/budgets", tags=["Presupuestos"])
@@ -37,6 +38,8 @@ async def create_budget(
 ):
     try:
         budget = await uc.create_budget(body)
+    except BudgetIdentifierCollisionError as e:
+        raise HTTPException(status_code=409, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     return BudgetResponse(
@@ -49,7 +52,7 @@ async def create_budget(
 
 
 @router.get("/{uuid}", response_model=BudgetResponse)
-async def get_budget(uuid: str, uc: BudgetUseCases = Depends(get_budget_use_cases)):
+async def get_budget(uuid: UUID4, uc: BudgetUseCases = Depends(get_budget_use_cases)):
     budget = await _get_active_budget_or_raise(uuid, uc)
     return BudgetResponse(
         code=budget.code, uuid=budget.uuid, client_info=budget.client_info,
@@ -62,7 +65,7 @@ async def get_budget(uuid: str, uc: BudgetUseCases = Depends(get_budget_use_case
 
 @router.get("/{uuid}/pdf")
 async def download_budget_pdf(
-    uuid: str,
+    uuid: UUID4,
     request: Request,
     uc: BudgetUseCases = Depends(get_budget_use_cases),
 ):
@@ -85,7 +88,7 @@ async def download_budget_pdf(
 
 @router.get("/{uuid}/whatsapp-share", response_model=BudgetWhatsappShareResponse)
 async def get_budget_whatsapp_share(
-    uuid: str,
+    uuid: UUID4,
     request: Request,
     uc: BudgetUseCases = Depends(get_budget_use_cases),
 ):
@@ -98,8 +101,8 @@ async def get_budget_whatsapp_share(
     return BudgetWhatsappShareResponse(whatsapp_url=whatsapp_url)
 
 
-async def _get_active_budget_or_raise(uuid: str, uc: BudgetUseCases) -> Budget:
-    budget = await uc.get_by_uuid(uuid)
+async def _get_active_budget_or_raise(uuid: UUID4, uc: BudgetUseCases) -> Budget:
+    budget = await uc.get_by_uuid(str(uuid))
     if not budget:
         raise HTTPException(status_code=404, detail="Presupuesto no encontrado")
     if await uc.is_expired(budget):

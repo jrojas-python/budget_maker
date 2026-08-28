@@ -5,6 +5,7 @@ from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from io import BytesIO
 from pathlib import Path
+from pydantic import UUID4
 
 from app.application.use_cases.budget_use_cases import BudgetUseCases
 from app.api.dependencies import get_budget_use_cases
@@ -32,9 +33,9 @@ async def admin(request: Request):
 
 
 @router.get("/presupuesto/{uuid}", response_class=HTMLResponse)
-async def view_budget(uuid: str, request: Request, uc: BudgetUseCases = Depends(get_budget_use_cases)):
+async def view_budget(uuid: UUID4, request: Request, uc: BudgetUseCases = Depends(get_budget_use_cases)):
     """Vista HTML del presupuesto con validación de expiración."""
-    budget = await uc.get_by_uuid(uuid)
+    budget = await uc.get_by_uuid(str(uuid))
     if not budget:
         raise HTTPException(status_code=404, detail="Presupuesto no encontrado")
 
@@ -60,9 +61,9 @@ async def view_budget(uuid: str, request: Request, uc: BudgetUseCases = Depends(
 
 
 @router.get("/presupuesto/{uuid}/pdf")
-async def download_budget_pdf(uuid: str, request: Request, uc: BudgetUseCases = Depends(get_budget_use_cases)):
+async def download_budget_pdf(uuid: UUID4, request: Request, uc: BudgetUseCases = Depends(get_budget_use_cases)):
     """Genera y descarga el PDF del presupuesto."""
-    budget = await uc.get_by_uuid(uuid)
+    budget = await uc.get_by_uuid(str(uuid))
     if not budget:
         raise HTTPException(status_code=404, detail="Presupuesto no encontrado")
     if await uc.is_expired(budget):

@@ -179,9 +179,9 @@ GET /api/v1/products/search?q=tornillo&tags=metal
 |--------|------|------|-------------|
 | GET | `/api/v1/budgets/` | — | Listar presupuestos |
 | POST | `/api/v1/budgets/` | Bearer | Crear presupuesto |
-| GET | `/api/v1/budgets/{uuid}` | — | Obtener presupuesto por UUID (retorna 410 si expiró) |
-| GET | `/api/v1/budgets/{uuid}/pdf` | No | Descargar PDF (404 si no existe, 410 si expira) |
-| GET | `/api/v1/budgets/{uuid}/whatsapp-share` | — | Obtener enlace canónico `wa.me` para compartir (404/410 según vigencia) |
+| GET | `/api/v1/budgets/{uuid}` | — | Obtener presupuesto por UUID4 (422 si UUID inválido, 410 si expiró) |
+| GET | `/api/v1/budgets/{uuid}/pdf` | No | Descargar PDF (422 UUID inválido, 404 si no existe, 410 si expira) |
+| GET | `/api/v1/budgets/{uuid}/whatsapp-share` | — | Obtener enlace canónico `wa.me` (422 UUID inválido, 404/410 según vigencia) |
 
 Ejemplo de respuesta `GET /api/v1/budgets/{uuid}/whatsapp-share`:
 
@@ -251,6 +251,9 @@ Los tests usan una BD separada (`budget_maker_test`) que se elimina al finalizar
 ## Notas Técnicas
 
 - Los links de presupuesto toman el TTL vigente al momento de creación (`link_ttl_minutes`) y no cambian retroactivamente.
+- Los identificadores públicos `code` y `uuid` tienen índice único en MongoDB para evitar duplicados persistentes.
+- `code` mantiene el formato comercial `BM-YYYYMMDD-XXXX`; si hay colisión se reintenta de forma acotada.
+- Todas las rutas públicas por UUID validan el formato en la frontera HTTP y rechazan UUID inválidos con 422.
 - Los montos de cotización (`unit_cost`, `line_total`, `subtotal`, `tax_amount`, `total`) se congelan al crear el presupuesto y no se recalculan después.
 - La generación de PDF aplica branding en servidor (`site_logo`, `site_title`, `site_subtitle`) y no depende de JavaScript cliente.
 - El render de PDF usa `base_url` absoluto del proyecto detectado por módulo (no depende del directorio actual de arranque).

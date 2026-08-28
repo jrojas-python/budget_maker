@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 
 from beanie import Document
 from pydantic import BaseModel, Field
+from pymongo import IndexModel
 
 from app.domain.models.product import Product
 
@@ -29,6 +30,14 @@ class BudgetItem(BaseModel):
     color_hex: str | None = None
 
 
+class BudgetIdentifierCollisionError(ValueError):
+    """Error de colisión de identificador público en presupuesto."""
+
+    def __init__(self, identifier: str):
+        self.identifier = identifier
+        super().__init__(f"Identificador público duplicado: {identifier}")
+
+
 class Budget(Document):
     """Presupuesto / cotización generada."""
 
@@ -47,3 +56,15 @@ class Budget(Document):
 
     class Settings:
         name = "budgets"
+        indexes = [
+            IndexModel(
+                [("code", 1)],
+                unique=True,
+                partialFilterExpression={"code": {"$exists": True}},
+            ),
+            IndexModel(
+                [("uuid", 1)],
+                unique=True,
+                partialFilterExpression={"uuid": {"$exists": True}},
+            ),
+        ]

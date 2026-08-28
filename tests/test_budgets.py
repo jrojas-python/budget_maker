@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
+from uuid import UUID
 
 import pytest
 from httpx import AsyncClient
@@ -242,6 +243,36 @@ async def test_get_active_budget_returns_200(client: AsyncClient, auth_headers: 
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/api/v1/budgets/no-es-uuid",
+        "/api/v1/budgets/no-es-uuid/pdf",
+        "/api/v1/budgets/no-es-uuid/whatsapp-share",
+        "/presupuesto/no-es-uuid",
+        "/presupuesto/no-es-uuid/pdf",
+    ],
+)
+async def test_public_budget_routes_reject_malformed_uuid(client: AsyncClient, path: str):
+    """Las rutas públicas de presupuesto rechazan UUID malformado con 422."""
+    res = await client.get(path)
+    assert res.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_malformed_uuid_fails_before_repository_lookup(client: AsyncClient, monkeypatch: pytest.MonkeyPatch):
+    """UUID malformado debe fallar en validación de ruta antes de consultar repositorio."""
+    from app.application.use_cases.budget_use_cases import BudgetUseCases
+
+    async def _should_not_be_called(_self: BudgetUseCases, _uuid: str):
+        raise AssertionError("No debe ejecutarse lookup de repositorio para UUID inválido")
+
+    monkeypatch.setattr(BudgetUseCases, "get_by_uuid", _should_not_be_called)
+    res = await client.get("/api/v1/budgets/no-es-uuid")
+    assert res.status_code == 422
+
+
+@pytest.mark.asyncio
 async def test_get_expired_budget_returns_410(client: AsyncClient, auth_headers: dict):
     """GET /{uuid} de presupuesto expirado retorna HTTP 410."""
     from app.api.dependencies import get_budget_use_cases
@@ -320,7 +351,13 @@ async def test_api_pdf_returns_200_for_active_budget(client: AsyncClient, auth_h
 
 @pytest.mark.asyncio
 async def test_api_pdf_returns_404_when_budget_not_found(client: AsyncClient):
-    res = await client.get("/api/v1/budgets/00000000-0000-0000-0000-000000000000/pdf")
+    res = await client.get("/api/v1/budgets/550e8400-e29b-41d4-a716-446655440000/pdf")
+    assert res.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_get_budget_returns_404_when_budget_not_found(client: AsyncClient):
+    res = await client.get("/api/v1/budgets/550e8400-e29b-41d4-a716-446655440000")
     assert res.status_code == 404
 
 
@@ -396,7 +433,7 @@ async def test_whatsapp_share_uses_canonical_format(client: AsyncClient, auth_he
 
 @pytest.mark.asyncio
 async def test_whatsapp_share_returns_404_when_budget_not_found(client: AsyncClient):
-    res = await client.get("/api/v1/budgets/00000000-0000-0000-0000-000000000000/whatsapp-share")
+    res = await client.get("/api/v1/budgets/550e8400-e29b-41d4-a716-446655440000/whatsapp-share")
     assert res.status_code == 404
 
 
@@ -410,6 +447,81 @@ async def test_whatsapp_share_returns_410_when_budget_expired(client: AsyncClien
     res = await client.get(f"/api/v1/budgets/{budget_uuid}/whatsapp-share")
     assert res.status_code == 410
     assert "expirado" in res.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_create_budget_retries_when_code_collides(client: AsyncClient, auth_headers: dict, monkeypatch: pytest.MonkeyPatch):
+    """Ante colisión de code, la creación reintenta con nuevo código."""
+    from app.application.use_cases.budget_use_cases import BudgetUseCases
+
+    await _create_product(client, auth_headers)
+    first = await client.post("/api/v1/budgets/", json=_budget_payload())
+    assert first.status_code == 201
+    first_code = first.json()["code"]
+    retry_code = f"{first_code[:-4]}ZZZZ"
+    if retry_code == first_code:
+        retry_code = f"{first_code[:-4]}YYYY"
+    generated_codes = iter([first_code, retry_code])
+
+    def _fake_generate_code(self: BudgetUseCases) -> str:
+        return next(generated_codes)
+
+    monkeypatch.setattr(BudgetUseCases, "_generate_code", _fake_generate_code)
+
+    second = await client.post("/api/v1/budgets/", json=_budget_payload())
+    assert second.status_code == 201
+    assert second.json()["code"] == retry_code
+
+
+@pytest.mark.asyncio
+async def test_create_budget_fails_when_code_retries_are_exhausted(
+    client: AsyncClient,
+    auth_headers: dict,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Si colisiona code en todos los intentos, la API responde 409 explícito."""
+    from app.application.use_cases.budget_use_cases import BudgetUseCases
+
+    await _create_product(client, auth_headers)
+    first = await client.post("/api/v1/budgets/", json=_budget_payload())
+    assert first.status_code == 201
+    first_code = first.json()["code"]
+
+    monkeypatch.setattr(BudgetUseCases, "_generate_code", lambda _self: first_code)
+
+    second = await client.post("/api/v1/budgets/", json=_budget_payload())
+    assert second.status_code == 409
+    assert "code" in second.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_create_budget_fails_explicitly_on_uuid_collision(
+    client: AsyncClient,
+    auth_headers: dict,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Ante colisión de uuid, la API falla explícitamente con HTTP 409."""
+    from app.application.use_cases.budget_use_cases import BudgetUseCases
+    import app.application.use_cases.budget_use_cases as budget_uc_module
+
+    await _create_product(client, auth_headers)
+    first = await client.post("/api/v1/budgets/", json=_budget_payload())
+    assert first.status_code == 201
+    first_budget = first.json()
+
+    calls = {"count": 0}
+
+    def _counted_code(_self: BudgetUseCases) -> str:
+        calls["count"] += 1
+        return "BM-20990101-UU11"
+
+    monkeypatch.setattr(budget_uc_module, "uuid4", lambda: UUID(first_budget["uuid"]))
+    monkeypatch.setattr(BudgetUseCases, "_generate_code", _counted_code)
+
+    second = await client.post("/api/v1/budgets/", json=_budget_payload())
+    assert second.status_code == 409
+    assert "uuid" in second.json()["detail"].lower()
+    assert calls["count"] == 1
 
 
 @pytest.mark.asyncio

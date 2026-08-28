@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from app.domain.models.budget import Budget, BudgetItem
+from app.domain.models.budget import Budget, BudgetIdentifierCollisionError, BudgetItem
 from app.domain.schemas.budget import BudgetCreate
 from app.infrastructure.repositories.budget_repo import BudgetRepository
 from app.infrastructure.repositories.config_repo import ConfigRepository
@@ -19,6 +19,7 @@ class BudgetUseCases:
     """Casos de uso para presupuestos/cotizaciones."""
 
     _DEFAULT_SITE_TITLE = "BUDGET MAKER"
+    _MAX_CODE_GENERATION_ATTEMPTS = 5
 
     def __init__(
         self,
@@ -79,26 +80,36 @@ class BudgetUseCases:
         tax_amount = subtotal * (tax_percent / 100)
         total = subtotal + tax_amount
 
-        code = self._generate_code()
         budget_uuid = str(uuid4())
-        created_at = datetime.now(timezone.utc)
-        expires_at = created_at + timedelta(minutes=link_ttl_minutes)
+        code_attempts = 0
 
-        budget_data = {
-            "code": code,
-            "uuid": budget_uuid,
-            "client_info": data.client_info.model_dump(),
-            "items": [item.model_dump() for item in items],
-            "subtotal": round(subtotal, 2),
-            "tax_percent": tax_percent,
-            "tax_amount": round(tax_amount, 2),
-            "total": round(total, 2),
-            "payment_method": data.payment_method,
-            "link_ttl_minutes": link_ttl_minutes,
-            "created_at": created_at,
-            "expires_at": expires_at,
-        }
-        return await self._budget_repo.create(budget_data)
+        while code_attempts < self._MAX_CODE_GENERATION_ATTEMPTS:
+            created_at = datetime.now(timezone.utc)
+            expires_at = created_at + timedelta(minutes=link_ttl_minutes)
+            budget_data = {
+                "code": self._generate_code(),
+                "uuid": budget_uuid,
+                "client_info": data.client_info.model_dump(),
+                "items": [item.model_dump() for item in items],
+                "subtotal": round(subtotal, 2),
+                "tax_percent": tax_percent,
+                "tax_amount": round(tax_amount, 2),
+                "total": round(total, 2),
+                "payment_method": data.payment_method,
+                "link_ttl_minutes": link_ttl_minutes,
+                "created_at": created_at,
+                "expires_at": expires_at,
+            }
+            try:
+                return await self._budget_repo.create(budget_data)
+            except BudgetIdentifierCollisionError as exc:
+                if exc.identifier != "code":
+                    raise
+                code_attempts += 1
+                if code_attempts >= self._MAX_CODE_GENERATION_ATTEMPTS:
+                    raise BudgetIdentifierCollisionError("code") from exc
+
+        raise BudgetIdentifierCollisionError("code")
 
     async def get_by_uuid(self, uuid: str) -> Budget | None:
         return await self._budget_repo.get_by_uuid(uuid)

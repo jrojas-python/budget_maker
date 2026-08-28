@@ -1,5 +1,6 @@
 from datetime import datetime
 
+from pydantic import UUID4
 from pydantic import BaseModel
 
 from app.domain.models.budget import BudgetItem, ClientInfo
@@ -19,7 +20,7 @@ class BudgetCreate(BaseModel):
 
 class BudgetResponse(BaseModel):
     code: str
-    uuid: str
+    uuid: UUID4
     client_info: ClientInfo
     items: list[BudgetItem]
     subtotal: float
