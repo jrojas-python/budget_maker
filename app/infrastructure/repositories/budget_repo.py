@@ -38,9 +38,9 @@ class BudgetRepository(BaseRepository):
                 identifier = "uuid"
             else:
                 message = str(exc).lower()
-                if " code " in message or "index: code_" in message:
+                if " code " in message or "index: code_" in message or "uq_budget_code" in message:
                     identifier = "code"
-                elif " uuid " in message or "index: uuid_" in message:
+                elif " uuid " in message or "index: uuid_" in message or "uq_budget_uuid" in message:
                     identifier = "uuid"
             raise BudgetIdentifierCollisionError(identifier) from exc
         logger.info("Presupuesto creado: %s", budget.code)

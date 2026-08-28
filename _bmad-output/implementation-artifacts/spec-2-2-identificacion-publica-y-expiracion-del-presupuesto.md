@@ -2,7 +2,7 @@
 title: '2.2 Identificacion publica y expiracion del presupuesto'
 type: 'feature'
 created: '2026-08-28'
-baseline_commit: '5ccb7065300d22fab84435573f26de4f9d62f1b3'
+baseline_commit: '5ccb706532a04772b2c6b04a5ba9a021a7505905'
 status: 'done'
 review_loop_iteration: 0
 context:
@@ -79,35 +79,40 @@ La unicidad real debe estar en base de datos, no solo en probabilidad estadísti
 
 ## Suggested Review Order
 
-**Persistencia y contrato de unicidad**
+**Entrada y contrato HTTP**
 
-- Define error de dominio e índices únicos para blindar identificadores públicos.
-  [`budget.py:33`](../../app/domain/models/budget.py#L33)
-
-- Traduce colisiones de Mongo a error semántico consumible por aplicación.
-  [`budget_repo.py:31`](../../app/infrastructure/repositories/budget_repo.py#L31)
-
-- Implementa reintentos acotados para `code` y fail-fast para `uuid`.
-  [`budget_use_cases.py:86`](../../app/application/use_cases/budget_use_cases.py#L86)
-
-**Frontera HTTP y validación UUID4**
-
-- Aplica validación tipada de ruta y mapea colisiones a HTTP 409.
+- Valida UUID4 en endpoints públicos y unifica respuesta de colisión en creación.
   [`budgets.py:42`](../../app/api/v1/budgets.py#L42)
 
-- Alinea vistas públicas con UUID4 para rechazar entradas inválidas.
-  [`views.py:36`](../../web/views.py#L36)
+- Extiende la validación UUID4 al flujo web público y descarga PDF.
+  [`views.py:35`](../../web/views.py#L35)
 
-- Asegura consistencia de contrato de salida con UUID4 tipado.
-  [`budget.py:23`](../../app/domain/schemas/budget.py#L23)
+**Persistencia y semántica de colisiones**
 
-**Cobertura de regresión y documentación**
+- Declara error de dominio e índices únicos nominales para `code` y `uuid`.
+  [`budget.py:33`](../../app/domain/models/budget.py#L33)
 
-- Verifica fail-fast 422, 404 inexistente y colisiones con/ sin reintento.
+- Traduce `DuplicateKeyError` en colisión semántica por identificador público.
+  [`budget_repo.py:31`](../../app/infrastructure/repositories/budget_repo.py#L31)
+
+- Reintenta solo colisiones de `code` y mantiene `created_at/expires_at` estables.
+  [`budget_use_cases.py:88`](../../app/application/use_cases/budget_use_cases.py#L88)
+
+**Cobertura de comportamiento**
+
+- Verifica rechazo 422 de UUID malformado en API y web.
+  [`test_budgets.py:256`](../../tests/test_budgets.py#L256)
+
+- Asegura fail-fast antes de repositorio para UUID inválido.
   [`test_budgets.py:263`](../../tests/test_budgets.py#L263)
 
-- Documenta contrato actualizado de UUID4, unicidad y expiración.
+- Cubre agotamiento de reintentos por `code` y colisión explícita de `uuid`.
+  [`test_budgets.py:477`](../../tests/test_budgets.py#L477)
+
+**Soporte y trazabilidad**
+
+- Actualiza contrato funcional documentado para UUID4, 422, 404 y 410.
   [`README.md:182`](../../README.md#L182)
 
-- Registra trazabilidad de la iteración implementada.
+- Registra iteración y alcance técnico en bitácora del proyecto.
   [`changelog.md:7`](../../.agents/changelog.md#L7)

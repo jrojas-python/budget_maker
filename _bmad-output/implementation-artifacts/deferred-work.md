@@ -21,3 +21,7 @@
 ## Deferred from: code review of spec-2-5-enlace-de-whatsapp-para-compartir-cotizacion.md (2026-08-28)
 
 - Falta cobertura E2E del flujo JavaScript de catálogo para asegurar que `#modal-whatsapp` salga habilitado con URL canónica después de crear presupuesto; hoy la suite valida backend y vista pública, pero no ejecuta `catalog.js`.
+
+- source_spec: `C:\Users\JesusRojas\Documents\pyfiles\budget_maker\_bmad-output\implementation-artifacts\spec-2-2-identificacion-publica-y-expiracion-del-presupuesto.md`
+  summary: Definir estrategia de saneamiento/migración de datos legacy antes de imponer índices únicos de `code` y `uuid`.
+  evidence: Si existen duplicados históricos en `budgets`, la creación de índices únicos puede fallar en arranque; es real pero fuera del alcance de esta historia.

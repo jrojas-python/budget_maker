@@ -81,11 +81,11 @@ class BudgetUseCases:
         total = subtotal + tax_amount
 
         budget_uuid = str(uuid4())
+        created_at = datetime.now(timezone.utc)
+        expires_at = created_at + timedelta(minutes=link_ttl_minutes)
         code_attempts = 0
 
         while code_attempts < self._MAX_CODE_GENERATION_ATTEMPTS:
-            created_at = datetime.now(timezone.utc)
-            expires_at = created_at + timedelta(minutes=link_ttl_minutes)
             budget_data = {
                 "code": self._generate_code(),
                 "uuid": budget_uuid,
@@ -103,7 +103,7 @@ class BudgetUseCases:
             try:
                 return await self._budget_repo.create(budget_data)
             except BudgetIdentifierCollisionError as exc:
-                if exc.identifier != "code":
+                if exc.identifier == "uuid":
                     raise
                 code_attempts += 1
                 if code_attempts >= self._MAX_CODE_GENERATION_ATTEMPTS:

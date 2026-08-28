@@ -59,11 +59,13 @@ class Budget(Document):
         indexes = [
             IndexModel(
                 [("code", 1)],
+                name="uq_budget_code",
                 unique=True,
                 partialFilterExpression={"code": {"$exists": True}},
             ),
             IndexModel(
                 [("uuid", 1)],
+                name="uq_budget_uuid",
                 unique=True,
                 partialFilterExpression={"uuid": {"$exists": True}},
             ),
