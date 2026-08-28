@@ -253,8 +253,10 @@ Los tests usan una BD separada (`budget_maker_test`) que se elimina al finalizar
 - Los links de presupuesto toman el TTL vigente al momento de creación (`link_ttl_minutes`) y no cambian retroactivamente.
 - Los montos de cotización (`unit_cost`, `line_total`, `subtotal`, `tax_amount`, `total`) se congelan al crear el presupuesto y no se recalculan después.
 - La generación de PDF aplica branding en servidor (`site_logo`, `site_title`, `site_subtitle`) y no depende de JavaScript cliente.
+- El render de PDF usa `base_url` absoluto del proyecto detectado por módulo (no depende del directorio actual de arranque).
 - El enlace de WhatsApp se genera en backend con formato canónico `https://wa.me/?text={url_encoded_text}` e incluye empresa, código, total y link temporal.
 - La visibilidad de fotos en PDF está gobernada por `show_product_photos_in_pdf`; si está en `false`, se oculta la columna completa.
+- La resolución de imágenes para PDF se consulta por lote de SKU para evitar patrón `N+1` durante el render.
 - En rutas de descarga PDF (`/api/v1/budgets/{uuid}/pdf` y `/presupuesto/{uuid}/pdf`) los presupuestos expirados retornan HTTP 410.
 - Las imágenes se almacenan en `uploads/products/` (montado como volumen Docker)
 - Formatos de imagen permitidos: PNG, JPEG, WebP. Tamaño máximo: 2MB

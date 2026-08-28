@@ -66,6 +66,14 @@ context:
 - Given `show_product_photos_in_pdf=true` y productos con imágenes, when se genera el PDF, then se muestran las fotos disponibles en el documento.
 - Given la personalización de branding configurada, when se genera el PDF, then el membrete (logo, título y subtítulo) se renderiza en servidor de forma consistente.
 
+### Review Findings
+
+- [x] [Review][Patch] Base URL del PDF depende de `Path.cwd()` y puede romper assets cuando el proceso arranca fuera de la raíz del proyecto [app/api/v1/budgets.py:76]
+- [x] [Review][Patch] La ruta pública `/presupuesto/{uuid}/pdf` repite el mismo patrón de `Path.cwd()` y hereda el riesgo de render sin CSS/imágenes [web/views.py:72]
+- [x] [Review][Patch] Construcción de contexto PDF hace consultas por SKU dentro de un bucle (`N+1`) y degrada bajo cotizaciones con muchos ítems [app/application/use_cases/budget_use_cases.py:125]
+- [x] [Review][Patch] Falta prueba del camino exitoso de descarga PDF pública (`/presupuesto/{uuid}/pdf`) para cubrir contrato 200 + `application/pdf` [tests/test_budgets.py:340]
+- [x] [Review][Patch] Falta aserción explícita del logo de membrete server-side en pruebas de PDF con branding habilitado [tests/test_budgets.py:490]
+
 ## Spec Change Log
 
 ## Design Notes

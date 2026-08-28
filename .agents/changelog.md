@@ -4,6 +4,28 @@ Registro de iteraciones del proyecto.
 
 ---
 
+## [2026-08-28] Iteración 9 — Code review Story 2.4 (hardening y cobertura)
+
+### Realizado
+- Se corrigió la generación de `base_url` para PDF en API y web pública para que no dependa de `Path.cwd()` y sea estable aunque el proceso arranque fuera de la raíz.
+- Se eliminó el patrón `N+1` al resolver imágenes de productos en render de presupuesto/PDF mediante consulta por lote de SKUs.
+- Se añadió cobertura del camino exitoso de descarga PDF pública (`GET /presupuesto/{uuid}/pdf`), validando `200`, `application/pdf` y firma `%PDF`.
+- Se reforzó la prueba de branding server-side verificando la presencia del logo en el HTML renderizado para PDF.
+- Se marcaron como resueltos los hallazgos `patch` del code review en la spec de la historia 2.4 y se sincronizó su estado en sprint-status.
+
+### Archivos modificados
+- `app/infrastructure/repositories/product_repo.py`
+- `app/application/use_cases/budget_use_cases.py`
+- `app/api/v1/budgets.py`
+- `web/views.py`
+- `tests/test_budgets.py`
+- `_bmad-output/implementation-artifacts/spec-2-4-generacion-de-pdf-profesional-configurable.md`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
+- `README.md`
+- `.agents/changelog.md`
+
+---
+
 ## [2026-08-28] Iteración 8 — Historia 2.5 enlace canónico de WhatsApp
 
 ### Realizado

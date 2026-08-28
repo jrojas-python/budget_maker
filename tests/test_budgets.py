@@ -361,6 +361,18 @@ async def test_web_budget_view_returns_html_for_active_budget(client: AsyncClien
 
 
 @pytest.mark.asyncio
+async def test_web_pdf_returns_200_for_active_budget(client: AsyncClient, auth_headers: dict):
+    await _create_product(client, auth_headers)
+    created = await client.post("/api/v1/budgets/", json=_budget_payload())
+    budget_uuid = created.json()["uuid"]
+
+    res = await client.get(f"/presupuesto/{budget_uuid}/pdf")
+    assert res.status_code == 200
+    assert res.headers["content-type"].startswith("application/pdf")
+    assert res.content.startswith(b"%PDF")
+
+
+@pytest.mark.asyncio
 async def test_whatsapp_share_uses_canonical_format(client: AsyncClient, auth_headers: dict):
     await _create_product(client, auth_headers)
     await client.put(
@@ -514,6 +526,16 @@ async def test_pdf_shows_photo_and_server_side_branding_when_enabled(
         headers=auth_headers,
     )
     assert update_subtitle.status_code == 200
+    logo_filename = "test-site-logo.png"
+    logo_path = Path("uploads/branding") / logo_filename
+    logo_path.parent.mkdir(parents=True, exist_ok=True)
+    logo_path.write_bytes(b"fake-logo")
+    update_logo = await client.put(
+        "/api/v1/config/site_logo",
+        json={"value": f"/uploads/branding/{logo_filename}", "description": "Logo de prueba"},
+        headers=auth_headers,
+    )
+    assert update_logo.status_code == 200
 
     uc = get_budget_use_cases()
     product = await uc._product_repo.get_by_sku("BGT-001")
@@ -541,8 +563,12 @@ async def test_pdf_shows_photo_and_server_side_branding_when_enabled(
         assert res.status_code == 200
         assert "photo-column" in captured["html"]
         assert "budget-item-photo" in captured["html"]
+        assert "budget-letterhead-logo" in captured["html"]
+        assert logo_filename in captured["html"]
         assert "Mi Empresa SRL" in captured["html"]
         assert "Cotizaciones profesionales" in captured["html"]
     finally:
         if image_path.exists():
             image_path.unlink()
+        if logo_path.exists():
+            logo_path.unlink()

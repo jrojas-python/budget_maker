@@ -125,9 +125,14 @@ class BudgetUseCases:
         logo_path = str(config.extra_settings.get("site_logo", "")).strip()
         logo_url = self._resolve_branding_asset(logo_path, for_pdf=for_pdf)
 
+        products_by_sku = await self._product_repo.get_by_skus([item.sku for item in budget.items]) if show_photos else {}
         budget_items: list[dict[str, Any]] = []
         for item in budget.items:
-            image_url = await self._resolve_product_image(item.sku, for_pdf=for_pdf) if show_photos else None
+            image_url = await self._resolve_product_image(
+                item.sku,
+                for_pdf=for_pdf,
+                products_by_sku=products_by_sku,
+            ) if show_photos else None
             budget_items.append({"item": item, "image_url": image_url})
 
         return {
@@ -201,8 +206,16 @@ class BudgetUseCases:
             return value
         return self._DEFAULT_SITE_TITLE
 
-    async def _resolve_product_image(self, sku: str, for_pdf: bool) -> str | None:
-        product = await self._product_repo.get_by_sku(sku)
+    async def _resolve_product_image(
+        self,
+        sku: str,
+        for_pdf: bool,
+        products_by_sku: dict[str, Any] | None = None,
+    ) -> str | None:
+        if products_by_sku is not None:
+            product = products_by_sku.get(sku)
+        else:
+            product = await self._product_repo.get_by_sku(sku)
         if not product:
             return None
 

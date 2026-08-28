@@ -33,6 +33,13 @@ class ProductRepository(BaseRepository):
     async def get_by_sku(self, sku: str) -> Product | None:
         return await Product.find_one(Product.sku == sku)
 
+    async def get_by_skus(self, skus: list[str]) -> dict[str, Product]:
+        unique_skus = list(dict.fromkeys(s.strip() for s in skus if s and s.strip()))
+        if not unique_skus:
+            return {}
+        products = await Product.find({"sku": {"$in": unique_skus}}).to_list()
+        return {product.sku: product for product in products}
+
     async def create(self, data: dict[str, Any]) -> Product:
         product = Product(**data)
         await product.insert()

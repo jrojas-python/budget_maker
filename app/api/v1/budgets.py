@@ -12,6 +12,7 @@ from app.domain.schemas.budget import BudgetCreate, BudgetResponse, BudgetWhatsa
 
 router = APIRouter(prefix="/api/v1/budgets", tags=["Presupuestos"])
 templates = Jinja2Templates(directory="web/templates")
+PROJECT_ROOT_BASE_URL = Path(__file__).resolve().parents[3].as_uri() + "/"
 
 
 @router.get("/", response_model=list[BudgetResponse])
@@ -73,7 +74,7 @@ async def download_budget_pdf(
     )
     pdf_bytes = uc.generate_pdf(
         html_content,
-        base_url=(Path.cwd().resolve().as_uri() + "/"),
+        base_url=PROJECT_ROOT_BASE_URL,
     )
     return StreamingResponse(
         BytesIO(pdf_bytes),

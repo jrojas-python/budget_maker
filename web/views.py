@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Web - Presupuestos"])
 templates = Jinja2Templates(directory="web/templates")
+PROJECT_ROOT_BASE_URL = Path(__file__).resolve().parents[1].as_uri() + "/"
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -73,7 +74,7 @@ async def download_budget_pdf(uuid: str, request: Request, uc: BudgetUseCases = 
         **render_context,
     )
 
-    pdf_bytes = uc.generate_pdf(html_content, base_url=(Path.cwd().resolve().as_uri() + "/"))
+    pdf_bytes = uc.generate_pdf(html_content, base_url=PROJECT_ROOT_BASE_URL)
     return StreamingResponse(
         BytesIO(pdf_bytes),
         media_type="application/pdf",
