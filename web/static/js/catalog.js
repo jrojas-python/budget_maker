@@ -284,26 +284,46 @@ async function createBudget() {
         const baseUrl = window.location.origin;
         document.getElementById('modal-link').href = baseUrl + '/presupuesto/' + b.uuid;
         document.getElementById('modal-pdf').href = baseUrl + '/presupuesto/' + b.uuid + '/pdf';
-
-        const clientName = (b.client_info.nombres + ' ' + b.client_info.apellidos).trim();
-        let waLines = [
-            `*COTIZACIÓN ${b.code}*`, `Cliente: ${clientName}`,
-            `Fecha: ${document.getElementById('modal-date').textContent}`,
-            `*${b.items.length} líneas · ${b.items.reduce((s, i) => s + i.quantity, 0)} unidades*`, '',
-        ];
-        b.items.forEach(it => {
-            const colorTxt = it.color_name ? ` · ${it.color_name}` : '';
-            waLines.push(`• ${it.sku} · ${it.name}${colorTxt} · ${it.quantity}x $${it.unit_cost.toFixed(2)}`);
-        });
-        waLines.push('', '*TOTALES:*', `Subtotal: $${b.subtotal.toFixed(2)}`, `Total: $${b.total.toFixed(2)}`);
-        waLines.push('', `Ver online: ${baseUrl}/presupuesto/${b.uuid}`);
-        document.getElementById('modal-whatsapp').href = 'https://wa.me/?text=' + encodeURIComponent(waLines.join('\n'));
+        await loadWhatsappShareUrl(b.uuid);
 
         document.getElementById('budget-modal').classList.remove('hidden');
         showToast('Presupuesto creado: ' + b.code);
     } else {
         const err = await res.json().catch(() => ({}));
         showToast(err.detail || 'Error al crear presupuesto', 'error');
+    }
+}
+
+async function loadWhatsappShareUrl(uuid) {
+    const waButton = document.getElementById('modal-whatsapp');
+    waButton.href = '#';
+    waButton.setAttribute('aria-disabled', 'true');
+    waButton.classList.add('is-disabled');
+    try {
+        const res = await apiFetch(`/api/v1/budgets/${uuid}/whatsapp-share`);
+        if (!res.ok) {
+            if (res.status === 410) {
+                showToast('La cotización expiró y no se puede compartir', 'error');
+            } else if (res.status === 404) {
+                showToast('No se encontró la cotización para compartir', 'error');
+            } else {
+                showToast('No se pudo generar enlace de WhatsApp', 'error');
+            }
+            return;
+        }
+        const data = await res.json();
+        const url = String(data.whatsapp_url || '');
+        if (url.startsWith('https://wa.me/?text=')) {
+            waButton.href = url;
+            waButton.removeAttribute('aria-disabled');
+            waButton.classList.remove('is-disabled');
+            return;
+        }
+        showToast('No se pudo generar enlace de WhatsApp', 'error');
+        console.error('Formato de URL de WhatsApp inválido');
+    } catch {
+        showToast('No se pudo generar enlace de WhatsApp', 'error');
+        console.error('Error al generar enlace de WhatsApp');
     }
 }
 

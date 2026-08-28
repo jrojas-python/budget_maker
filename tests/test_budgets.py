@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
 import pytest
 from httpx import AsyncClient
@@ -36,6 +37,16 @@ async def _expire_budget(uuid: str) -> None:
     assert model is not None
     model.expires_at = datetime.now(timezone.utc) - timedelta(minutes=5)
     await model.save()
+
+
+def _extract_whatsapp_text(whatsapp_url: str) -> str:
+    parsed = urlparse(whatsapp_url)
+    assert parsed.scheme == "https"
+    assert parsed.netloc == "wa.me"
+    assert parsed.path == "/"
+    text_param = parse_qs(parsed.query).get("text")
+    assert text_param
+    return text_param[0]
 
 
 @pytest.mark.asyncio
@@ -347,6 +358,101 @@ async def test_web_budget_view_returns_html_for_active_budget(client: AsyncClien
     assert res.status_code == 200
     assert "text/html" in res.headers.get("content-type", "")
     assert budget["code"] in res.text
+
+
+@pytest.mark.asyncio
+async def test_whatsapp_share_uses_canonical_format(client: AsyncClient, auth_headers: dict):
+    await _create_product(client, auth_headers)
+    await client.put(
+        "/api/v1/config/site_title",
+        json={"value": "Compañía Ñandú", "description": "Nombre comercial"},
+        headers=auth_headers,
+    )
+    created = await client.post("/api/v1/budgets/", json=_budget_payload())
+    budget = created.json()
+
+    res = await client.get(f"/api/v1/budgets/{budget['uuid']}/whatsapp-share")
+    assert res.status_code == 200
+    whatsapp_url = res.json()["whatsapp_url"]
+    text = _extract_whatsapp_text(whatsapp_url)
+
+    assert f"Empresa: Compañía Ñandú" in text
+    assert f"Código: {budget['code']}" in text
+    assert f"Total: ${budget['total']:.2f}" in text
+    assert f"Link: http://test/presupuesto/{budget['uuid']}" in text
+
+
+@pytest.mark.asyncio
+async def test_whatsapp_share_returns_404_when_budget_not_found(client: AsyncClient):
+    res = await client.get("/api/v1/budgets/00000000-0000-0000-0000-000000000000/whatsapp-share")
+    assert res.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_whatsapp_share_returns_410_when_budget_expired(client: AsyncClient, auth_headers: dict):
+    await _create_product(client, auth_headers)
+    created = await client.post("/api/v1/budgets/", json=_budget_payload())
+    budget_uuid = created.json()["uuid"]
+    await _expire_budget(budget_uuid)
+
+    res = await client.get(f"/api/v1/budgets/{budget_uuid}/whatsapp-share")
+    assert res.status_code == 410
+    assert "expirado" in res.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_whatsapp_share_fallbacks_site_title(client: AsyncClient, auth_headers: dict):
+    await _create_product(client, auth_headers)
+    await client.put(
+        "/api/v1/config/site_title",
+        json={"value": "   ", "description": "Vacío para fallback"},
+        headers=auth_headers,
+    )
+    created = await client.post("/api/v1/budgets/", json=_budget_payload())
+    budget = created.json()
+
+    res = await client.get(f"/api/v1/budgets/{budget['uuid']}/whatsapp-share")
+    assert res.status_code == 200
+    text = _extract_whatsapp_text(res.json()["whatsapp_url"])
+    assert "Empresa: BUDGET MAKER" in text
+
+
+@pytest.mark.asyncio
+async def test_whatsapp_share_encodes_special_characters(client: AsyncClient, auth_headers: dict):
+    await _create_product(client, auth_headers)
+    await client.put(
+        "/api/v1/config/site_title",
+        json={"value": "Compañía Perú Ñ", "description": "Acentos"},
+        headers=auth_headers,
+    )
+    payload = _budget_payload()
+    payload["client_info"]["nombres"] = "José"
+    created = await client.post("/api/v1/budgets/", json=payload)
+    budget = created.json()
+
+    res = await client.get(f"/api/v1/budgets/{budget['uuid']}/whatsapp-share")
+    assert res.status_code == 200
+    whatsapp_url = res.json()["whatsapp_url"]
+    assert " " not in whatsapp_url
+    assert "Compañía" not in whatsapp_url
+    assert "Ñ" not in whatsapp_url
+    text = _extract_whatsapp_text(whatsapp_url)
+    assert "Compañía Perú Ñ" in text
+
+
+@pytest.mark.asyncio
+async def test_web_and_api_use_same_whatsapp_format(client: AsyncClient, auth_headers: dict):
+    await _create_product(client, auth_headers)
+    created = await client.post("/api/v1/budgets/", json=_budget_payload())
+    budget = created.json()
+
+    share_res = await client.get(f"/api/v1/budgets/{budget['uuid']}/whatsapp-share")
+    assert share_res.status_code == 200
+    whatsapp_url = share_res.json()["whatsapp_url"]
+
+    web_res = await client.get(f"/presupuesto/{budget['uuid']}")
+    assert web_res.status_code == 200
+    assert f'href="{whatsapp_url}"' in web_res.text
 
 
 @pytest.mark.asyncio

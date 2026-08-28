@@ -4,6 +4,27 @@ Registro de iteraciones del proyecto.
 
 ---
 
+## [2026-08-28] Iteración 8 — Historia 2.5 enlace canónico de WhatsApp
+
+### Realizado
+- Se reemplazó la composición de WhatsApp por un builder canónico en backend (`BudgetUseCases.generate_whatsapp_share_url`) con formato `wa.me` URL-encoded UTF-8 e inclusión explícita de empresa, código, total y link temporal.
+- Se unificó la vista pública para construir el link temporal con `request.url_for(...)` y delegar la URL de WhatsApp al builder backend usando `site_title` del contexto render.
+- Se incorporó el endpoint `GET /api/v1/budgets/{uuid}/whatsapp-share` para que el flujo de catálogo consuma exactamente el mismo formato canónico sin duplicar lógica en JavaScript.
+- Se eliminó el armado manual del mensaje WhatsApp en `web/static/js/catalog.js` y se reemplazó por consumo del endpoint backend.
+- Se añadieron pruebas de presupuesto para validar formato canónico, fallback de empresa, encoding de caracteres especiales y consistencia entre flujo API y vista web.
+- Se documentó en README el endpoint de compartición y la política de formato canónico.
+
+### Archivos modificados
+- `app/application/use_cases/budget_use_cases.py`
+- `app/api/v1/budgets.py`
+- `web/views.py`
+- `web/static/js/catalog.js`
+- `tests/test_budgets.py`
+- `README.md`
+- `.agents/changelog.md`
+
+---
+
 ## [2026-08-28] Iteración 7 — Historia 2.4 PDF profesional configurable
 
 ### Realizado

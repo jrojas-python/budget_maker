@@ -18,6 +18,8 @@ from settings.config import settings
 class BudgetUseCases:
     """Casos de uso para presupuestos/cotizaciones."""
 
+    _DEFAULT_SITE_TITLE = "BUDGET MAKER"
+
     def __init__(
         self,
         budget_repo: BudgetRepository,
@@ -116,7 +118,7 @@ class BudgetUseCases:
     async def build_budget_render_context(self, budget: Budget, for_pdf: bool) -> dict[str, Any]:
         """Construye contexto de render para web/PDF usando configuración global."""
         config = await self._config_repo.get_effective_global_config()
-        site_title = str(config.extra_settings.get("site_title", "BUDGET MAKER"))
+        site_title = self._sanitize_site_title(str(config.extra_settings.get("site_title", self._DEFAULT_SITE_TITLE)))
         site_subtitle = str(config.extra_settings.get("site_subtitle", "")).strip()
         show_photos = bool(config.show_product_photos_in_pdf)
 
@@ -141,29 +143,31 @@ class BudgetUseCases:
     def generate_pdf(self, html_content: str, base_url: str | None = None) -> bytes:
         return self._pdf.generate_from_html(html_content, base_url=base_url)
 
-    def generate_whatsapp_text(self, budget: Budget) -> str:
-        """Genera el texto formateado para compartir por WhatsApp."""
-        total_lines = len(budget.items)
-        total_units = sum(item.quantity for item in budget.items)
-        client_name = f"{budget.client_info.nombres} {budget.client_info.apellidos}".strip()
-        fecha = budget.created_at.strftime("%d/%m/%Y")
+    async def generate_whatsapp_share_url(
+        self,
+        budget: Budget,
+        public_budget_url: str,
+        site_title: str | None = None,
+    ) -> str:
+        """Genera URL canónica de WhatsApp para compartir la cotización."""
+        if not public_budget_url or not public_budget_url.strip():
+            raise ValueError("public_budget_url requerido")
 
-        lines = [
-            f"*COTIZACIÓN {budget.code}*",
-            "BUDGET MAKER",
-            f"Cliente: {client_name}",
-            f"Fecha: {fecha}",
-            f"*{total_lines} líneas · {total_units} unidades*",
-        ]
-        for item in budget.items:
-            color_info = f" · {item.color_name} ({item.color_hex})" if item.color_name else ""
-            lines.append(f"• {item.sku} · {item.name}{color_info} · {item.quantity}x ${item.unit_cost:.2f}")
-        lines.append("*TOTALES:*")
-        lines.append(f"Subtotal: ${budget.subtotal:.2f}")
-        lines.append(f"Total con impuestos: ${budget.total:.2f}")
+        company_name = site_title
+        if company_name is None:
+            config = await self._config_repo.get_effective_global_config()
+            company_name = str(config.extra_settings.get("site_title", self._DEFAULT_SITE_TITLE))
+        company_name = self._sanitize_site_title(company_name)
 
-        text = "\n".join(lines)
-        return f"https://wa.me/?text={urllib.parse.quote(text)}"
+        text = "\n".join(
+            [
+                f"Empresa: {company_name}",
+                f"Código: {budget.code}",
+                f"Total: ${budget.total:.2f}",
+                f"Link: {public_budget_url}",
+            ]
+        )
+        return f"https://wa.me/?text={urllib.parse.quote(text, safe='')}"
 
     def _generate_code(self) -> str:
         today = datetime.now(timezone.utc).strftime("%Y%m%d")
@@ -190,6 +194,12 @@ class BudgetUseCases:
                 return file_path.resolve().as_uri()
             return value
         return None
+
+    def _sanitize_site_title(self, site_title: str) -> str:
+        value = str(site_title or "").strip()
+        if value:
+            return value
+        return self._DEFAULT_SITE_TITLE
 
     async def _resolve_product_image(self, sku: str, for_pdf: bool) -> str | None:
         product = await self._product_repo.get_by_sku(sku)

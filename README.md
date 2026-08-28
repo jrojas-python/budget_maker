@@ -181,6 +181,15 @@ GET /api/v1/products/search?q=tornillo&tags=metal
 | POST | `/api/v1/budgets/` | Bearer | Crear presupuesto |
 | GET | `/api/v1/budgets/{uuid}` | — | Obtener presupuesto por UUID (retorna 410 si expiró) |
 | GET | `/api/v1/budgets/{uuid}/pdf` | No | Descargar PDF (404 si no existe, 410 si expira) |
+| GET | `/api/v1/budgets/{uuid}/whatsapp-share` | — | Obtener enlace canónico `wa.me` para compartir (404/410 según vigencia) |
+
+Ejemplo de respuesta `GET /api/v1/budgets/{uuid}/whatsapp-share`:
+
+```json
+{
+  "whatsapp_url": "https://wa.me/?text=Empresa%3A%20Mi%20Empresa%0AC%C3%B3digo%3A%20BM-20260828-AB12%0ATotal%3A%20%24123.45%0ALink%3A%20http%3A%2F%2Flocalhost%3A8000%2Fpresupuesto%2F550e8400-e29b-41d4-a716-446655440000"
+}
+```
 
 ### Configuración Global
 | Método | Ruta | Auth | Descripción |
@@ -244,6 +253,7 @@ Los tests usan una BD separada (`budget_maker_test`) que se elimina al finalizar
 - Los links de presupuesto toman el TTL vigente al momento de creación (`link_ttl_minutes`) y no cambian retroactivamente.
 - Los montos de cotización (`unit_cost`, `line_total`, `subtotal`, `tax_amount`, `total`) se congelan al crear el presupuesto y no se recalculan después.
 - La generación de PDF aplica branding en servidor (`site_logo`, `site_title`, `site_subtitle`) y no depende de JavaScript cliente.
+- El enlace de WhatsApp se genera en backend con formato canónico `https://wa.me/?text={url_encoded_text}` e incluye empresa, código, total y link temporal.
 - La visibilidad de fotos en PDF está gobernada por `show_product_photos_in_pdf`; si está en `false`, se oculta la columna completa.
 - En rutas de descarga PDF (`/api/v1/budgets/{uuid}/pdf` y `/presupuesto/{uuid}/pdf`) los presupuestos expirados retornan HTTP 410.
 - Las imágenes se almacenan en `uploads/products/` (montado como volumen Docker)

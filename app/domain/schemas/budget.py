@@ -30,3 +30,7 @@ class BudgetResponse(BaseModel):
     link_ttl_minutes: int
     created_at: datetime
     expires_at: datetime | None = None
+
+
+class BudgetWhatsappShareResponse(BaseModel):
+    whatsapp_url: str

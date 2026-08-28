@@ -115,6 +115,12 @@ h1 {
     opacity: 0.85;
 }
 
+.btn.is-disabled {
+    opacity: 0.5;
+    pointer-events: none;
+    cursor: not-allowed;
+}
+
 .btn-pdf {
     background: #e74c3c;
     color: white;

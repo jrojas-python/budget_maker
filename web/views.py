@@ -40,8 +40,13 @@ async def view_budget(uuid: str, request: Request, uc: BudgetUseCases = Depends(
     if await uc.is_expired(budget):
         return templates.TemplateResponse("public/budget_expired.html", {"request": request, "code": budget.code})
 
-    whatsapp_url = uc.generate_whatsapp_text(budget)
     render_context = await uc.build_budget_render_context(budget, for_pdf=False)
+    public_budget_url = str(request.url_for("view_budget", uuid=budget.uuid))
+    whatsapp_url = await uc.generate_whatsapp_share_url(
+        budget=budget,
+        public_budget_url=public_budget_url,
+        site_title=render_context["site_title"],
+    )
     return templates.TemplateResponse(
         "public/budget_view.html",
         {

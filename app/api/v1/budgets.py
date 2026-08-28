@@ -8,7 +8,7 @@ from fastapi import Request
 from app.application.use_cases.budget_use_cases import BudgetUseCases
 from app.api.dependencies import get_budget_use_cases
 from app.domain.models.budget import Budget
-from app.domain.schemas.budget import BudgetCreate, BudgetResponse
+from app.domain.schemas.budget import BudgetCreate, BudgetResponse, BudgetWhatsappShareResponse
 
 router = APIRouter(prefix="/api/v1/budgets", tags=["Presupuestos"])
 templates = Jinja2Templates(directory="web/templates")
@@ -80,6 +80,21 @@ async def download_budget_pdf(
         media_type="application/pdf",
         headers={"Content-Disposition": f"attachment; filename={budget.code}.pdf"},
     )
+
+
+@router.get("/{uuid}/whatsapp-share", response_model=BudgetWhatsappShareResponse)
+async def get_budget_whatsapp_share(
+    uuid: str,
+    request: Request,
+    uc: BudgetUseCases = Depends(get_budget_use_cases),
+):
+    budget = await _get_active_budget_or_raise(uuid, uc)
+    public_budget_url = str(request.url_for("view_budget", uuid=budget.uuid))
+    whatsapp_url = await uc.generate_whatsapp_share_url(
+        budget=budget,
+        public_budget_url=public_budget_url,
+    )
+    return BudgetWhatsappShareResponse(whatsapp_url=whatsapp_url)
 
 
 async def _get_active_budget_or_raise(uuid: str, uc: BudgetUseCases) -> Budget:
