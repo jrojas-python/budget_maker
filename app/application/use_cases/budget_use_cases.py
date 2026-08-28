@@ -1,7 +1,7 @@
 import random
 import string
 import urllib.parse
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 from app.domain.models.budget import Budget, BudgetItem
@@ -28,7 +28,7 @@ class BudgetUseCases:
         self._pdf = pdf_service
 
     async def create_budget(self, data: BudgetCreate) -> Budget:
-        """Crea un presupuesto calculando totales automáticamente."""
+        """Crea un presupuesto congelando montos como snapshot inmutable."""
         items: list[BudgetItem] = []
         subtotal = 0.0
 
@@ -76,6 +76,8 @@ class BudgetUseCases:
 
         code = self._generate_code()
         budget_uuid = str(uuid4())
+        created_at = datetime.now(timezone.utc)
+        expires_at = created_at + timedelta(minutes=link_ttl_minutes)
 
         budget_data = {
             "code": code,
@@ -88,6 +90,8 @@ class BudgetUseCases:
             "total": round(total, 2),
             "payment_method": data.payment_method,
             "link_ttl_minutes": link_ttl_minutes,
+            "created_at": created_at,
+            "expires_at": expires_at,
         }
         return await self._budget_repo.create(budget_data)
 
@@ -96,8 +100,12 @@ class BudgetUseCases:
 
     async def is_expired(self, budget: Budget) -> bool:
         """Verifica si el link del presupuesto ha expirado."""
-        minutes = int(budget.link_ttl_minutes)
         now = datetime.now(timezone.utc)
+        if budget.expires_at:
+            expires = budget.expires_at.replace(tzinfo=timezone.utc) if budget.expires_at.tzinfo is None else budget.expires_at
+            return now >= expires
+        # Fallback para presupuestos legacy sin expires_at
+        minutes = int(budget.link_ttl_minutes)
         created = budget.created_at.replace(tzinfo=timezone.utc) if budget.created_at.tzinfo is None else budget.created_at
         elapsed = (now - created).total_seconds() / 60
         return elapsed > minutes

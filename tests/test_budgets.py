@@ -4,13 +4,14 @@ import pytest
 from httpx import AsyncClient
 
 
-async def _create_product(client: AsyncClient, auth_headers: dict) -> None:
+async def _create_product(client: AsyncClient, auth_headers: dict) -> dict:
     res = await client.post(
         "/api/v1/products/",
         json={"name": "Producto Presupuesto", "sku": "BGT-001", "cost": 100.0, "unit": "unidad"},
         headers=auth_headers,
     )
     assert res.status_code == 201
+    return res.json()
 
 
 def _budget_payload() -> dict:
@@ -87,6 +88,51 @@ async def test_existing_budget_not_recalculated_after_config_change(client: Asyn
 
 
 @pytest.mark.asyncio
+async def test_existing_budget_not_recalculated_after_product_cost_change(client: AsyncClient, auth_headers: dict):
+    """Cambiar costo en catálogo no altera montos de presupuestos ya emitidos."""
+    product = await _create_product(client, auth_headers)
+
+    await client.put(
+        "/api/v1/config/global",
+        json={"tax_rate": 10, "link_ttl_minutes": 30, "show_product_photos_in_pdf": True},
+        headers=auth_headers,
+    )
+
+    first = await client.post("/api/v1/budgets/", json=_budget_payload())
+    assert first.status_code == 201
+    first_budget = first.json()
+
+    update_product = await client.put(
+        f"/api/v1/products/{product['id']}",
+        json={"cost": 150.0},
+        headers=auth_headers,
+    )
+    assert update_product.status_code == 200
+    assert update_product.json()["cost"] == 150.0
+
+    fetched_first = await client.get(f"/api/v1/budgets/{first_budget['uuid']}")
+    assert fetched_first.status_code == 200
+    fetched_first_data = fetched_first.json()
+    first_item = fetched_first_data["items"][0]
+    assert first_item["unit_cost"] == 100.0
+    assert first_item["line_total"] == 100.0
+    assert fetched_first_data["subtotal"] == 100.0
+    assert fetched_first_data["tax_percent"] == 10
+    assert fetched_first_data["tax_amount"] == 10.0
+    assert fetched_first_data["total"] == 110.0
+
+    second = await client.post("/api/v1/budgets/", json=_budget_payload())
+    assert second.status_code == 201
+    second_budget = second.json()
+    second_item = second_budget["items"][0]
+    assert second_item["unit_cost"] == 150.0
+    assert second_item["line_total"] == 150.0
+    assert second_budget["subtotal"] == 150.0
+    assert second_budget["tax_amount"] == 15.0
+    assert second_budget["total"] == 165.0
+
+
+@pytest.mark.asyncio
 async def test_create_budget_with_active_payment_method(client: AsyncClient, auth_headers: dict):
     """Crear presupuesto con método de pago activo lo persiste correctamente."""
     await _create_product(client, auth_headers)
@@ -117,6 +163,17 @@ async def test_create_budget_rejects_inactive_payment_method(client: AsyncClient
 
 
 @pytest.mark.asyncio
+async def test_create_budget_rejects_unknown_sku(client: AsyncClient):
+    """SKU inexistente retorna HTTP 422 al crear presupuesto."""
+    payload = _budget_payload()
+    payload["items"] = [{"sku": "SKU-NO-EXISTE", "quantity": 1}]
+
+    res = await client.post("/api/v1/budgets/", json=payload)
+    assert res.status_code == 422
+    assert "producto no encontrado" in res.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
 async def test_create_budget_without_payment_method(client: AsyncClient, auth_headers: dict):
     """Crear presupuesto sin método de pago mantiene compatibilidad."""
     await _create_product(client, auth_headers)
@@ -124,3 +181,100 @@ async def test_create_budget_without_payment_method(client: AsyncClient, auth_he
     res = await client.post("/api/v1/budgets/", json=_budget_payload())
     assert res.status_code == 201
     assert res.json()["payment_method"] is None
+
+
+@pytest.mark.asyncio
+async def test_create_budget_persists_expires_at(client: AsyncClient, auth_headers: dict):
+    """Al crear presupuesto, expires_at se persiste como created_at + TTL."""
+    await _create_product(client, auth_headers)
+    await client.put(
+        "/api/v1/config/global",
+        json={"tax_rate": 10, "link_ttl_minutes": 60, "show_product_photos_in_pdf": True},
+        headers=auth_headers,
+    )
+
+    res = await client.post("/api/v1/budgets/", json=_budget_payload())
+    assert res.status_code == 201
+    budget = res.json()
+    assert budget["expires_at"] is not None
+    created = datetime.fromisoformat(budget["created_at"])
+    expires = datetime.fromisoformat(budget["expires_at"])
+    diff_minutes = (expires - created).total_seconds() / 60
+    assert abs(diff_minutes - 60) < 1
+
+
+@pytest.mark.asyncio
+async def test_get_active_budget_returns_200(client: AsyncClient, auth_headers: dict):
+    """GET /{uuid} de presupuesto activo retorna 200."""
+    await _create_product(client, auth_headers)
+    created = await client.post("/api/v1/budgets/", json=_budget_payload())
+    uuid = created.json()["uuid"]
+
+    res = await client.get(f"/api/v1/budgets/{uuid}")
+    assert res.status_code == 200
+    assert res.json()["expires_at"] is not None
+
+
+@pytest.mark.asyncio
+async def test_get_expired_budget_returns_410(client: AsyncClient, auth_headers: dict):
+    """GET /{uuid} de presupuesto expirado retorna HTTP 410."""
+    from app.api.dependencies import get_budget_use_cases
+
+    await _create_product(client, auth_headers)
+    created = await client.post("/api/v1/budgets/", json=_budget_payload())
+    budget_data = created.json()
+
+    # Forzar expiración moviendo expires_at al pasado
+    uc = get_budget_use_cases()
+    model = await uc.get_by_uuid(budget_data["uuid"])
+    assert model is not None
+    model.expires_at = datetime.now(timezone.utc) - timedelta(minutes=5)
+    await model.save()
+
+    res = await client.get(f"/api/v1/budgets/{budget_data['uuid']}")
+    assert res.status_code == 410
+    assert "expirado" in res.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_list_budgets_includes_expired(client: AsyncClient, auth_headers: dict):
+    """GET / (listado admin) incluye presupuestos expirados."""
+    from app.api.dependencies import get_budget_use_cases
+
+    await _create_product(client, auth_headers)
+    created = await client.post("/api/v1/budgets/", json=_budget_payload())
+    budget_data = created.json()
+
+    uc = get_budget_use_cases()
+    model = await uc.get_by_uuid(budget_data["uuid"])
+    assert model is not None
+    model.expires_at = datetime.now(timezone.utc) - timedelta(minutes=5)
+    await model.save()
+
+    res = await client.get("/api/v1/budgets/")
+    assert res.status_code == 200
+    uuids = [b["uuid"] for b in res.json()]
+    assert budget_data["uuid"] in uuids
+    expired_entry = next(b for b in res.json() if b["uuid"] == budget_data["uuid"])
+    assert expired_entry["expires_at"] is not None
+
+
+@pytest.mark.asyncio
+async def test_legacy_budget_without_expires_at_uses_fallback(client: AsyncClient, auth_headers: dict):
+    """Presupuesto legacy sin expires_at usa created_at + link_ttl_minutes como fallback."""
+    from app.api.dependencies import get_budget_use_cases
+
+    await _create_product(client, auth_headers)
+    created = await client.post("/api/v1/budgets/", json=_budget_payload())
+    budget_data = created.json()
+
+    # Simular presupuesto legacy: quitar expires_at y forzar expiración vía created_at
+    uc = get_budget_use_cases()
+    model = await uc.get_by_uuid(budget_data["uuid"])
+    assert model is not None
+    model.expires_at = None
+    model.created_at = datetime.now(timezone.utc) - timedelta(minutes=model.link_ttl_minutes + 1)
+    await model.save()
+
+    res = await client.get(f"/api/v1/budgets/{budget_data['uuid']}")
+    assert res.status_code == 410
