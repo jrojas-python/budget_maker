@@ -117,8 +117,8 @@ Al iniciar, la app crea automáticamente:
 | GET | `/api/v1/products/` | — | Listar todos los productos (sin filtros) |
 | GET | `/api/v1/products/{id}` | — | Obtener producto (con categorías y colores) |
 | GET | `/api/v1/products/search` | — | Búsqueda y filtrado de productos (ver parámetros abajo) |
-| POST | `/api/v1/products/` | ****** Crear producto (acepta `colors`, `description`, `brand`, `tags`) |
-| PUT | `/api/v1/products/{id}` | ****** Actualizar producto (acepta `colors`, `description`, `brand`, `tags`) |
+| POST | `/api/v1/products/` | ****** Crear producto (acepta `colors`, `description`, `brand`, `tags`, `category_ids`; retorna 422 si algún category_id es inválido) |
+| PUT | `/api/v1/products/{id}` | ****** Actualizar producto (acepta `colors`, `description`, `brand`, `tags`, `category_ids`; retorna 422 si algún category_id es inválido) |
 | DELETE | `/api/v1/products/{id}` | Bearer | Eliminar producto |
 | PUT | `/api/v1/products/{id}/colors` | Bearer | Gestionar colores del producto (máx 6) |
 | POST | `/api/v1/products/{id}/image` | ****** Subir una imagen (PNG/JPEG/WebP, max 2MB, hasta 10 por producto) |
@@ -133,7 +133,7 @@ Todos los parámetros son opcionales y combinables (filtros acumulativos AND).
 |-----------|------|-------------|
 | `q` | string | Búsqueda parcial por subcadena (case-insensitive) en nombre, SKU y tags |
 | `sku` | string | Filtro exacto por código SKU |
-| `category_id` | string | Filtro por ObjectId de categoría |
+| `category_id` | string | Filtro por ObjectId de categoría; retorna 422 si el valor no es un ObjectId válido |
 | `category_slug` | string | Filtro por slug de categoría (se resuelve internamente a `category_id`) |
 | `tags` | list[string] | Filtro por tags con lógica OR (ejemplo: `?tags=metal&tags=madera`) |
 | `min_price` | float | Precio mínimo (inclusive) |
@@ -174,14 +174,39 @@ GET /api/v1/products/search?q=tornillo&tags=metal
 }
 ```
 
+Si envías `category_ids` inválidos al crear o actualizar productos, o un `category_id` malformado en búsqueda, la API responde `422` en lugar de propagar un error interno.
+
 ### Presupuestos
 | Método | Ruta | Auth | Descripción |
 |--------|------|------|-------------|
 | GET | `/api/v1/budgets/` | — | Listar presupuestos |
-| POST | `/api/v1/budgets/` | Bearer | Crear presupuesto |
+| POST | `/api/v1/budgets/` | Bearer | Crear presupuesto con `client_info.email` y `payment_method` opcional validado contra métodos activos |
 | GET | `/api/v1/budgets/{uuid}` | — | Obtener presupuesto por UUID4 (422 si UUID inválido, 410 si expiró) |
 | GET | `/api/v1/budgets/{uuid}/pdf` | No | Descargar PDF (422 UUID inválido, 404 si no existe, 410 si expira) |
 | GET | `/api/v1/budgets/{uuid}/whatsapp-share` | — | Obtener enlace canónico `wa.me` (422 UUID inválido, 404/410 según vigencia) |
+
+Ejemplo de payload `POST /api/v1/budgets/`:
+
+```json
+{
+  "client_info": {
+    "nombres": "Cliente Demo",
+    "telefono": "3001234567",
+    "direccion": "Calle 1 #2-3",
+    "documento": "12345678",
+    "email": "cliente@test.com"
+  },
+  "payment_method": "Transferencia",
+  "items": [
+    {
+      "sku": "BGT-001",
+      "quantity": 1
+    }
+  ]
+}
+```
+
+`payment_method` se valida solo al crear el presupuesto. Si no está en la lista activa de configuración global, la API responde `422`. Si se omite, el presupuesto se crea con `payment_method: null` para mantener compatibilidad.
 
 Ejemplo de respuesta `GET /api/v1/budgets/{uuid}/whatsapp-share`:
 

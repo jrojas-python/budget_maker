@@ -347,6 +347,44 @@ async def test_invalid_hex_validation(client: AsyncClient, auth_headers: dict):
     assert res.status_code == 422
 
 
+@pytest.mark.asyncio
+async def test_create_product_rejects_invalid_category_ids(client: AsyncClient, auth_headers: dict):
+    res = await client.post("/api/v1/products/", json={
+        "name": "Categoría inválida",
+        "sku": "CAT-ERR-001",
+        "cost": 10.0,
+        "category_ids": ["no-es-objectid"],
+    }, headers=auth_headers)
+
+    assert res.status_code == 422
+    assert "category_ids inválido" in res.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_update_product_rejects_invalid_category_ids(client: AsyncClient, auth_headers: dict):
+    created = await client.post("/api/v1/products/", json={
+        "name": "Producto base",
+        "sku": "CAT-ERR-002",
+        "cost": 10.0,
+    }, headers=auth_headers)
+    product_id = created.json()["id"]
+
+    res = await client.put(f"/api/v1/products/{product_id}", json={
+        "category_ids": ["no-es-objectid"],
+    }, headers=auth_headers)
+
+    assert res.status_code == 422
+    assert "category_ids inválido" in res.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_search_products_rejects_invalid_category_id(client: AsyncClient):
+    res = await client.get("/api/v1/products/search?category_id=no-es-objectid")
+
+    assert res.status_code == 422
+    assert "category_id inválido" in res.json()["detail"]
+
+
 def _make_excel(rows: list[list]) -> bytes:
     """Helper para crear archivos Excel en memoria."""
     from openpyxl import Workbook

@@ -28,7 +28,10 @@ async def search_products(
         q=q, sku=sku, category_id=category_id, category_slug=category_slug,
         tags=tags, min_price=min_price, max_price=max_price, page=page, limit=limit, sort_by=sort_by,
     )
-    return await uc.search(params, str(request.base_url))
+    try:
+        return await uc.search(params, str(request.base_url))
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
 
 
 @router.get("/", response_model=list[ProductResponse])
@@ -53,7 +56,10 @@ async def create_product(
     _: User = Depends(get_current_user),
     uc: ProductUseCases = Depends(get_product_use_cases),
 ):
-    product = await uc.create(body)
+    try:
+        product = await uc.create(body)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
     return build_product_response(product, str(request.base_url))
 
 
@@ -65,7 +71,10 @@ async def update_product(
     _: User = Depends(get_current_user),
     uc: ProductUseCases = Depends(get_product_use_cases),
 ):
-    product = await uc.update(product_id, body)
+    try:
+        product = await uc.update(product_id, body)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
     if not product:
         raise HTTPException(status_code=404, detail="Producto no encontrado")
     return build_product_response(product, str(request.base_url))

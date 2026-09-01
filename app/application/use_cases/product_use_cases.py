@@ -10,6 +10,17 @@ from app.infrastructure.services.excel_service import ExcelService
 from app.infrastructure.services.image_service import ImageService
 
 
+def _parse_object_id(value: str, field_name: str) -> PydanticObjectId:
+    try:
+        return PydanticObjectId(value)
+    except Exception as exc:
+        raise ValueError(f"{field_name} inválido") from exc
+
+
+def _parse_object_ids(values: list[str], field_name: str) -> list[PydanticObjectId]:
+    return [_parse_object_id(value, field_name) for value in values]
+
+
 def _normalize_tags(tags: list[str] | None) -> list[str]:
     if not tags:
         return []
@@ -101,14 +112,14 @@ class ProductUseCases:
     async def create(self, data: ProductCreate) -> Product:
         dump = data.model_dump()
         if dump.get("category_ids"):
-            dump["category_ids"] = [PydanticObjectId(cid) for cid in dump["category_ids"]]
+            dump["category_ids"] = _parse_object_ids(dump["category_ids"], "category_ids")
         dump["tags"] = _normalize_tags(dump.get("tags"))
         return await self._repo.create(dump)
 
     async def update(self, product_id: str, data: ProductUpdate) -> Product | None:
         update_data = data.model_dump(exclude_none=True)
         if "category_ids" in update_data:
-            update_data["category_ids"] = [PydanticObjectId(cid) for cid in update_data["category_ids"]]
+            update_data["category_ids"] = _parse_object_ids(update_data["category_ids"], "category_ids")
         if "tags" in update_data:
             update_data["tags"] = _normalize_tags(update_data.get("tags"))
         if not update_data:
@@ -187,6 +198,9 @@ class ProductUseCases:
                 resolved_cat_id = str(cat.id)
             else:
                 return PaginatedResponse.build(items=[], total=0, page=params.page, limit=params.limit)
+
+        if params.category_id:
+            _parse_object_id(params.category_id, "category_id")
 
         products, total = await self._repo.search(params, resolved_cat_id)
         items = [build_product_response(p, base_url) for p in products]

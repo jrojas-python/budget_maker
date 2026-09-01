@@ -4,6 +4,30 @@ Registro de iteraciones del proyecto.
 
 ---
 
+## [2026-08-31] Iteración 11 — Cierre operativo de historias 2.1, 2.2 y 2.3
+
+### Realizado
+- Se validó con pruebas enfocadas la historia 2.2 sobre UUID malformado, expiración y descarga PDF pública, confirmando el contrato 422/404/410 y la protección del recurso expirado.
+- Se validó con pruebas enfocadas la historia 2.3 sobre snapshot e inmutabilidad de montos para confirmar que presupuestos emitidos no se recalculan tras cambios posteriores.
+- Se validó con pruebas enfocadas la historia 2.1 sobre persistencia de `client_info.email`, aceptación de método de pago activo, rechazo de método inactivo con HTTP 422 y compatibilidad cuando el campo se omite.
+- Se endureció la validación de `category_ids` y `category_id` en productos/búsqueda para responder HTTP 422 ante ObjectIds inválidos, evitando errores 500 en Epic 1.
+- Se adelantó la creación de directorios de uploads antes del mount de `StaticFiles`, eliminando el riesgo de fallo de arranque en entornos limpios.
+- Se validó Epic 1 con pruebas enfocadas de configuración tipada, branding, importación Excel y búsqueda para habilitar su cierre operativo.
+- Se actualizó README para documentar `payment_method` y `client_info.email` en la creación de presupuestos.
+- Se actualizó README para documentar validaciones 422 de `category_ids`/`category_id` en productos y búsqueda.
+- Se sincronizó `sprint-status.yaml` marcando Epic 2 en `done` y dejando Epic 1 listo para sincronización final.
+
+### Archivos modificados
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
+- `README.md`
+- `.agents/changelog.md`
+- `app/application/use_cases/product_use_cases.py`
+- `app/api/v1/products.py`
+- `main.py`
+- `tests/test_products.py`
+
+---
+
 ## [2026-08-28] Iteración 10 — Historia 2.2 identificación pública y expiración
 
 ### Realizado

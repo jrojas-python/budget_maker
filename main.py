@@ -19,13 +19,13 @@ from web.views import router as web_router
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(name)s | %(levelname)s | %(message)s")
 logger = logging.getLogger(__name__)
 
+Path(settings.upload_dir).mkdir(parents=True, exist_ok=True)
+Path(settings.branding_dir).mkdir(parents=True, exist_ok=True)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
-    # Crear directorios de uploads
-    Path(settings.upload_dir).mkdir(parents=True, exist_ok=True)
-    Path(settings.branding_dir).mkdir(parents=True, exist_ok=True)
     # Seeds
     config_uc = get_config_use_cases()
     await config_uc.seed_defaults()
