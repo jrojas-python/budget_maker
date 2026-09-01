@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block title %}Cotización {{ budget.code }}{% endblock %}
+{% block navbar %}{% if not is_pdf %}{{ super() }}{% endif %}{% endblock %}
+{% block scripts %}{% if not is_pdf %}{{ super() }}{% endif %}{% endblock %}
+{% block container_class %}{% if is_pdf %}pdf-container{% endif %}{% endblock %}
+{% block content %}
+<div class="budget {% if is_pdf %}pdf-mode{% endif %}">
+    <header class="budget-letterhead">
+        {% if site_logo_url %}
+        <img src="{{ site_logo_url }}" alt="Logo empresa" class="budget-letterhead-logo">
+        {% endif %}
+        <div class="budget-letterhead-text">
+            <h1>{{ site_title }}</h1>
+            {% if site_subtitle %}
+            <p class="subtitle">{{ site_subtitle }}</p>
+            {% endif %}
+        </div>
+    </header>
+
+    <section class="budget-meta">
+        <h2>COTIZACIÓN {{ budget.code }}</h2>
+        <p><strong>Fecha:</strong> {{ budget.created_at.strftime('%d/%m/%Y') }}</p>
+    </section>
+
+    <div class="client-info">
+        <p><strong>Cliente:</strong> {{ budget.client_info.nombres }} {{ budget.client_info.apellidos }}</p>
+        <p><strong>Documento:</strong> {{ budget.client_info.documento }}</p>
+        <p><strong>Dirección:</strong> {{ budget.client_info.direccion }}</p>
+        <p><strong>Email:</strong> {{ budget.client_info.email or "—" }}</p>
+        <p><strong>Vendedor:</strong> {{ budget.client_info.vendedor }}</p>
+        <p><strong>Método de pago:</strong> {{ budget.payment_method or "No especificado" }}</p>
+    </div>
+
+    <table class="items-table">
+        <thead>
+            <tr>
+                <th>SKU</th>
+                {% if is_pdf and show_product_photos_in_pdf %}
+                <th class="photo-column">Foto</th>
+                {% endif %}
+                <th>Producto</th>
+                <th>Color</th>
+                <th>Cant.</th>
+                <th>P. Unit.</th>
+                <th>Total</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in budget_items %}
+            {% set item = row.item %}
+            <tr>
+                <td>{{ item.sku }}</td>
+                {% if is_pdf and show_product_photos_in_pdf %}
+                <td class="photo-cell">
+                    {% if row.image_url %}
+                    <img src="{{ row.image_url }}" alt="Foto {{ item.name }}" class="budget-item-photo">
+                    {% else %}
+                    <span class="photo-placeholder">—</span>
+                    {% endif %}
+                </td>
+                {% endif %}
+                <td>{{ item.name }}</td>
+                <td>
+                    {% if item.color_hex %}
+                    <span class="color-dot-inline" style="background:{{ item.color_hex }}"></span>
+                    {{ item.color_name }}
+                    {% else %}
+                    —
+                    {% endif %}
+                </td>
+                <td>{{ item.quantity }}</td>
+                <td>${{ "%.2f"|format(item.unit_cost) }}</td>
+                <td>${{ "%.2f"|format(item.line_total) }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <div class="totals">
+        <p>Subtotal: <strong>${{ "%.2f"|format(budget.subtotal) }}</strong></p>
+        <p>Impuesto ({{ budget.tax_percent }}%): <strong>${{ "%.2f"|format(budget.tax_amount) }}</strong></p>
+        <p class="grand-total">Total: <strong>${{ "%.2f"|format(budget.total) }}</strong></p>
+    </div>
+
+    {% if not is_pdf %}
+    <div class="actions">
+        <a href="/presupuesto/{{ budget.uuid }}/pdf" class="btn btn-pdf">📄 Descargar PDF</a>
+        <a href="{{ whatsapp_url }}" target="_blank" class="btn btn-whatsapp">💬 Compartir por WhatsApp</a>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

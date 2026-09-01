@@ -2,8 +2,9 @@ import logging
 from typing import Any
 
 from beanie import PydanticObjectId
+from pymongo.errors import DuplicateKeyError
 
-from app.domain.models.budget import Budget
+from app.domain.models.budget import Budget, BudgetIdentifierCollisionError
 from app.infrastructure.repositories.base import BaseRepository
 
 logger = logging.getLogger(__name__)
@@ -25,7 +26,23 @@ class BudgetRepository(BaseRepository):
 
     async def create(self, data: dict[str, Any]) -> Budget:
         budget = Budget(**data)
-        await budget.insert()
+        try:
+            await budget.insert()
+        except DuplicateKeyError as exc:
+            identifier = "desconocido"
+            details = getattr(exc, "details", {}) or {}
+            key_pattern = details.get("keyPattern") or {}
+            if "code" in key_pattern:
+                identifier = "code"
+            elif "uuid" in key_pattern:
+                identifier = "uuid"
+            else:
+                message = str(exc).lower()
+                if " code " in message or "index: code_" in message or "uq_budget_code" in message:
+                    identifier = "code"
+                elif " uuid " in message or "index: uuid_" in message or "uq_budget_uuid" in message:
+                    identifier = "uuid"
+            raise BudgetIdentifierCollisionError(identifier) from exc
         logger.info("Presupuesto creado: %s", budget.code)
         return budget
 

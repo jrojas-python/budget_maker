@@ -1,0 +1,3333 @@
+﻿diff --git a/PRD.md b/PRD.md
+index 729ba49..3e981e2 100644
+--- a/PRD.md
++++ b/PRD.md
+@@ -67,8 +67,16 @@ Servicio de generación de presupuestos/cotizaciones de productos. API RESTful c
+ 
+ ### Importación Excel
+ - Columnas esperadas: nombre, sku, costo, unidad, moneda
++- Columna opcional: colores (formato `Nombre:#HEX,Nombre:#HEX`)
+ - Regla de colisión: si SKU existe → actualizar; si no → crear
+ 
++### Colores de Producto
++- Cada producto puede tener de 0 a 6 colores
++- Cada color tiene nombre descriptivo y código hexadecimal (`#RRGGBB`)
++- El primer color de la lista es el default
++- Al crear presupuesto: el usuario elige un color o se asigna el default
++- El color seleccionado aparece en la vista HTML, PDF y texto WhatsApp
++
+ ### WhatsApp
+ - Formato con markdown WhatsApp (`*bold*`)
+ - URL: `https://wa.me/?text={url_encoded_text}`
+diff --git a/README.md b/README.md
+index d9149b3..bfc6905 100644
+--- a/README.md
++++ b/README.md
+@@ -1,127 +1,263 @@
+ # Budget Maker
+ 
+-Aplicación web para generación de presupuestos/cotizaciones de productos. Prueba de Concepto (POC).
++Sistema web de generación de presupuestos/cotizaciones con autenticación JWT, catálogo de productos con búsqueda e imágenes, categorías M2M y exportación PDF/WhatsApp.
+ 
+-## Stack
++## Stack Tecnológico
+ 
+-- **Backend:** Python 3.11+, FastAPI (async)
+-- **Base de Datos:** MongoDB 7 (Beanie ODM + Motor async)
+-- **Cliente DB:** mongo-express (puerto 8081)
+-- **Frontend:** Jinja2 Templates + CSS responsive (SPA-like con fetch API)
+-- **PDF:** WeasyPrint 62 + pydyf 0.11
+-- **Excel:** openpyxl (importación/exportación)
+-- **Contenedores:** Docker + docker-compose
+-
+-## Setup
+-
+-```bash
+-docker-compose up --build
+-```
+-
+-Servicios disponibles:
+-- API: http://localhost:8000
+-- Swagger UI: http://localhost:8000/docs
+-- mongo-express: http://localhost:8081
++| Capa | Tecnología |
++|------|-----------|
++| Backend | Python 3.11+, FastAPI 0.115.x (async) |
++| Base de Datos | MongoDB 7 (Beanie ODM + Motor) |
++| Autenticación | JWT HS256 (python-jose + passlib bcrypt) |
++| Frontend | Jinja2 Templates + Vanilla JS (sin build step) |
++| PDF | WeasyPrint 62 + pydyf 0.11 |
++| Excel | openpyxl (importación masiva) |
++| Tests | pytest + httpx + pytest-asyncio |
++| Contenedores | Docker + docker-compose |
+ 
+ ## Arquitectura
+ 
+ ```
+ budget_maker/
+-├── main.py                     # Entry point
+-├── settings/config.py          # Configuración (.env)
++├── main.py                          # Entry point, lifespan, routers
++├── settings/config.py               # Configuración (.env / pydantic-settings)
+ ├── app/
+-│   ├── database.py             # Conexión MongoDB
+-│   ├── domain/models/          # Documentos Beanie
+-│   ├── domain/schemas/         # Pydantic v2 schemas
++│   ├── database.py                  # Conexión MongoDB + init Beanie
++│   ├── domain/
++│   │   ├── models/                  # Documentos Beanie (Product, Budget, User, Category, GlobalConfig)
++│   │   └── schemas/                 # Pydantic v2 request/response
+ │   ├── infrastructure/
+-│   │   ├── repositories/       # Acceso a datos
+-│   │   └── services/           # PDF, Excel
+-│   ├── application/use_cases/  # Lógica de negocio
+-│   └── api/v1/                 # Routers REST
++│   │   ├── repositories/            # Acceso a datos (CRUD async)
++│   │   └── services/               # PDF, Excel, Auth, Image
++│   ├── application/use_cases/       # Lógica de negocio
++│   └── api/
++│       ├── dependencies.py          # DI, OAuth2, get_current_user
++│       └── v1/                      # Routers REST (auth, users, config, categories, products, budgets)
+ ├── web/
+-│   ├── views.py                # Rutas Jinja2
+-│   ├── templates/              # HTML
+-│   └── static/                 # CSS
++│   ├── views.py                     # Rutas Jinja2 (catálogo, admin, presupuestos)
++│   ├── templates/
++│   │   ├── base.html                # Layout con navbar adaptativo
++│   │   ├── public/                  # catalog, budget_view, budget_expired
++│   │   └── admin/                   # login, dashboard
++│   └── static/
++│       ├── styles.css               # Estilos responsivos
++│       └── js/                      # Módulos JS (api, auth, catalog, admin)
++├── tests/                           # Tests E2E (pytest + httpx)
++├── uploads/products/                # Imágenes de productos (montado como volumen)
++├── Dockerfile
+ └── docker-compose.yml
+ ```
+ 
+-**Principios:** Clean Architecture, POO, DRY, SOLID.
++**Principios:** Clean Architecture, DI, async everywhere, SOLID.
+ 
+-## Endpoints
++## Despliegue
+ 
+-### Configuración Global
+-| Método | Ruta | Descripción |
+-|--------|------|-------------|
+-| GET | `/api/v1/config/` | Listar toda la configuración |
+-| GET | `/api/v1/config/{key}` | Obtener config por clave |
+-| PUT | `/api/v1/config/{key}` | Actualizar config |
++### Requisitos
++- Docker + Docker Compose
++
++### Iniciar
++
++```bash
++docker-compose up --build
++```
++
++### Servicios
++
++| Servicio | URL |
++|----------|-----|
++| Aplicación | http://localhost:8000 |
++| Swagger UI | http://localhost:8000/docs |
++| mongo-express | http://localhost:8081 |
++
++### Variables de Entorno
++
++| Variable | Default | Descripción |
++|----------|---------|-------------|
++| `MONGO_URI` | `mongodb://mongodb:27017` | URI de MongoDB |
++| `MONGO_DB_NAME` | `budget_maker` | Nombre de la BD |
++| `JWT_SECRET_KEY` | `change-me-in-production` | Secreto JWT (cambiar en producción) |
++| `JWT_ALGORITHM` | `HS256` | Algoritmo JWT |
++| `JWT_EXPIRE_MINUTES` | `480` | Expiración del token (8h) |
++| `UPLOAD_DIR` | `uploads/products` | Directorio de imágenes |
++
++### Datos Iniciales (Seeds)
++
++Al iniciar, la app crea automáticamente:
++- **Superadmin:** usuario `admin` / contraseña `admin1234`
++- **Configuración global tipada:** `tax_rate` (18), `link_ttl_minutes` (30), `show_product_photos_in_pdf` (`true`)
++- **Configuración auxiliar:** `site_title`, `site_subtitle`
++
++## Referencia API
++
++### Autenticación
++| Método | Ruta | Auth | Descripción |
++|--------|------|------|-------------|
++| POST | `/api/v1/auth/login` | — | Login → JWT token |
++| GET | `/api/v1/auth/me` | Bearer | Datos del usuario actual |
++
++### Usuarios
++| Método | Ruta | Auth | Descripción |
++|--------|------|------|-------------|
++| GET | `/api/v1/users/` | Bearer | Listar usuarios |
++| POST | `/api/v1/users/` | Bearer | Crear usuario |
++| DELETE | `/api/v1/users/{id}` | Bearer | Eliminar usuario |
++
++### Categorías
++| Método | Ruta | Auth | Descripción |
++|--------|------|------|-------------|
++| GET | `/api/v1/categories/` | — | Listar categorías (`?active_only=true`) |
++| GET | `/api/v1/categories/{id}` | — | Obtener categoría |
++| POST | `/api/v1/categories/` | Bearer | Crear categoría (slug auto) |
++| PUT | `/api/v1/categories/{id}` | Bearer | Actualizar categoría |
++| DELETE | `/api/v1/categories/{id}` | Bearer | Eliminar categoría |
+ 
+ ### Productos
+-| Método | Ruta | Descripción |
+-|--------|------|-------------|
+-| GET | `/api/v1/products/` | Listar productos |
+-| GET | `/api/v1/products/{id}` | Obtener producto |
+-| POST | `/api/v1/products/` | Crear producto |
+-| PUT | `/api/v1/products/{id}` | Actualizar producto |
+-| DELETE | `/api/v1/products/{id}` | Eliminar producto |
+-| POST | `/api/v1/products/import` | Importar desde Excel (.xlsx) |
++| Método | Ruta | Auth | Descripción |
++|--------|------|------|-------------|
++| GET | `/api/v1/products/` | — | Listar todos los productos (sin filtros) |
++| GET | `/api/v1/products/{id}` | — | Obtener producto (con categorías y colores) |
++| GET | `/api/v1/products/search` | — | Búsqueda y filtrado de productos (ver parámetros abajo) |
++| POST | `/api/v1/products/` | Bearer | Crear producto (acepta `colors`, `description`, `brand`) |
++| PUT | `/api/v1/products/{id}` | Bearer | Actualizar producto (acepta `colors`, `description`, `brand`) |
++| DELETE | `/api/v1/products/{id}` | Bearer | Eliminar producto |
++| PUT | `/api/v1/products/{id}/colors` | Bearer | Gestionar colores del producto (máx 6) |
++| POST | `/api/v1/products/{id}/image` | Bearer | Subir imagen (PNG/JPEG/WebP, max 2MB) |
++| DELETE | `/api/v1/products/{id}/image` | Bearer | Eliminar imagen |
++| POST | `/api/v1/products/import` | Bearer | Importar desde Excel (.xlsx) |
++
++#### Búsqueda y filtrado — `GET /api/v1/products/search`
++
++Todos los parámetros son opcionales y combinables (filtros acumulativos AND).
++
++| Parámetro | Tipo | Descripción |
++|-----------|------|-------------|
++| `q` | string | Búsqueda de texto libre (usa MongoDB text index sobre `name`) |
++| `sku` | string | Filtro exacto por código SKU |
++| `category_id` | string | Filtro por ObjectId de categoría |
++| `category_slug` | string | Filtro por slug de categoría (se resuelve internamente a `category_id`) |
++| `min_price` | float | Precio mínimo (inclusive) |
++| `max_price` | float | Precio máximo (inclusive) |
++| `page` | int | Página (default: 1, mínimo: 1) |
++| `limit` | int | Resultados por página (default: 20, rango: 1-100) |
++| `sort_by` | enum | Ordenamiento: `name_asc`, `name_desc`, `price_asc`, `price_desc` (default: `name_asc`) |
++
++**Ejemplos:**
++```
++# Solo categoría
++GET /api/v1/products/search?category_slug=pisos
++
++# Texto + categoría + rango de precios
++GET /api/v1/products/search?q=porcelanato&category_slug=pisos&min_price=10&max_price=50
++
++# Solo rango de precios, ordenado por precio
++GET /api/v1/products/search?min_price=5&max_price=100&sort_by=price_asc
++
++# Paginado
++GET /api/v1/products/search?page=2&limit=12
++```
++
++**Respuesta:** `PaginatedResponse<ProductResponse>`
++```json
++{
++  "items": [ ... ],
++  "total": 45,
++  "page": 1,
++  "limit": 12,
++  "pages": 4
++}
++```
+ 
+ ### Presupuestos
+-| Método | Ruta | Descripción |
+-|--------|------|-------------|
+-| GET | `/api/v1/budgets/` | Listar presupuestos |
+-| POST | `/api/v1/budgets/` | Crear presupuesto |
+-| GET | `/api/v1/budgets/{uuid}` | Obtener presupuesto |
++| Método | Ruta | Auth | Descripción |
++|--------|------|------|-------------|
++| GET | `/api/v1/budgets/` | — | Listar presupuestos |
++| POST | `/api/v1/budgets/` | Bearer | Crear presupuesto |
++| GET | `/api/v1/budgets/{uuid}` | — | Obtener presupuesto por UUID |
++
++### Configuración Global
++| Método | Ruta | Auth | Descripción |
++|--------|------|------|-------------|
++| GET | `/api/v1/config/` | — | Listar configuración |
++| GET | `/api/v1/config/global` | — | Obtener configuración global tipada |
++| PUT | `/api/v1/config/global` | ****** Actualizar configuración global tipada |
++| GET | `/api/v1/config/{key}` | — | Obtener config por clave |
++| PUT | `/api/v1/config/{key}` | Bearer | Actualizar config |
++| POST | `/api/v1/config/branding/{key}` | Bearer | Subir logo o icono (`site_logo`, `site_icon`) |
++| DELETE | `/api/v1/config/branding/{key}` | Bearer | Eliminar logo o icono |
+ 
+ ### Frontend Web
+-| Método | Ruta | Descripción |
+-|--------|------|-------------|
+-| GET | `/` | Catálogo de productos + creación de presupuestos |
+-| GET | `/admin` | Panel admin (CRUD productos, config, import Excel) |
+-| GET | `/presupuesto/{uuid}` | Vista HTML del presupuesto (link temporal) |
+-| GET | `/presupuesto/{uuid}/pdf` | Descargar presupuesto como PDF |
++| Ruta | Descripción |
++|------|-------------|
++| `/` | Catálogo público con búsqueda, filtros y carrito |
++| `/admin/login` | Login de administrador |
++| `/admin` | Dashboard admin (productos, categorías, usuarios, config, import) |
++| `/presupuesto/{uuid}` | Vista HTML del presupuesto (link con expiración) |
++| `/presupuesto/{uuid}/pdf` | Descarga PDF del presupuesto |
++
++## Manual Funcional
+ 
+-## POC Frontend
++### Login (`/admin/login`)
++1. Ingresar con `admin` / `admin1234` (o credenciales creadas)
++2. El token JWT se guarda en localStorage (8h de duración)
++3. Todas las rutas admin verifican autenticación automáticamente
+ 
+ ### Catálogo (`/`)
+-- Grid de productos con buscador y filtros
+-- Panel lateral para armar presupuesto (seleccionar productos + cantidades)
+-- Formulario de datos del cliente (nombre, empresa, teléfono)
+-- Modal de confirmación con detalle completo del presupuesto generado
+-- Acciones post-creación: **Ver presupuesto**, **Descargar PDF**, **Enviar por WhatsApp**
+-
+-### Admin (`/admin`)
+-- **Tab Productos:** CRUD completo (crear, editar, eliminar)
+-- **Tab Configuración:** Editar porcentaje de impuesto y tiempo de expiración
+-- **Tab Importar:** Carga masiva de productos desde archivo Excel (.xlsx)
+-
+-## Flujo de Uso
+-
+-1. **Configurar** — Los valores de impuesto y expiración se crean automáticamente al iniciar
+-2. **Agregar productos** — Vía CRUD individual o importación Excel masiva desde `/admin`
+-3. **Crear presupuesto** — Desde el catálogo (`/`): seleccionar productos, llenar datos del cliente, confirmar
+-4. **Compartir** — Desde el modal de confirmación:
+-   - **Link temporal** — Vista HTML con expiración configurable
+-   - **PDF** — Descarga directa del presupuesto
+-   - **WhatsApp** — Mensaje pre-armado con resumen y link
++- **Búsqueda:** barra con debounce (300ms) que busca en MongoDB text index
++- **Filtros laterales:** categoría, rango de precios, ordenamiento
++- **Tarjetas:** imagen, badges de categoría, selector de colores, marca, descripción, SKU, precio, controles de cantidad
++- **Carrito lateral:** subtotal, impuesto, total, formulario de cliente (color seleccionado visible)
++- **Presupuesto:** modal con detalle completo + acciones (ver, PDF, WhatsApp)
++
++### Dashboard Admin (`/admin`)
++- **Productos:** CRUD con imagen, descripción, marca, selector de categorías, gestión de colores (hasta 6), thumbnail en tabla
++- **Categorías:** CRUD con slug auto-generado
++- **Usuarios:** Crear/eliminar administradores
++- **Configuración:** Editar impuesto, expiración de links, título, subtítulo, logo e icono del sitio
++- **Importar:** Carga masiva desde Excel (.xlsx)
++
++## Tests
++
++```bash
++# Instalar dependencias de test
++pip install pytest httpx pytest-asyncio
++
++# Ejecutar tests (requiere MongoDB en localhost:27017)
++pytest tests/ -v
++```
++
++Los tests usan una BD separada (`budget_maker_test`) que se elimina al finalizar.
+ 
+ ## Notas Técnicas
+ 
+-- Los links de presupuesto expiran según `tiempo_expiracion_link_minutos` (default: 30 min)
+-- MongoDB almacena `created_at` como datetime naive (sin timezone); el sistema normaliza a UTC antes de comparar
+-- WeasyPrint requiere `pydyf==0.11.*` (la versión 0.12+ tiene incompatibilidad con WeasyPrint 62)
+-- El Dockerfile incluye las dependencias del sistema necesarias para WeasyPrint (libpango, libcairo, etc.)
++- Los links de presupuesto toman el TTL vigente al momento de creación (`link_ttl_minutes`) y no cambian retroactivamente.
++- Las imágenes se almacenan en `uploads/products/` (montado como volumen Docker)
++- Formatos de imagen permitidos: PNG, JPEG, WebP. Tamaño máximo: 2MB
++- WeasyPrint requiere `pydyf==0.11.*` (incompatibilidad con 0.12+)
++- MongoDB text index en `Product.name` para búsqueda full-text
++- Las categorías tienen relación M2M con productos vía `category_ids`
++- Los productos soportan hasta 6 colores (`colors: [{name, hex}]`); el primero es el default
++- Los productos tienen campos opcionales `description` (texto libre) y `brand` (marca)
++- Al crear presupuesto, cada item registra `color_name` y `color_hex` del color seleccionado
++- El slug de categoría se genera automáticamente con `python-slugify`
+ 
+ ## Importación Excel
+ 
+ El archivo `.xlsx` debe tener estas columnas (primera fila como headers):
+ 
+-| nombre | sku | costo | unidad | moneda |
+-|--------|-----|-------|--------|--------|
+-| Producto A | SKU-001 | 25.50 | unidad | USD |
++| nombre | sku | costo | unidad | moneda | categoría (opcional) | descripción (opcional) | marca (opcional) | colores (opcional) |
++|--------|-----|-------|--------|--------|---------------------|----------------------|-----------------|--------------------|
++| Producto A | SKU-001 | 25.50 | unidad | USD | pisos,acabados | Porcelanato premium | MarcaX | Rojo:#FF0000,Azul:#0000FF |
+ 
+ **Regla de colisión:** Si el SKU ya existe → actualiza. Si no → crea.
+ 
++## Colores de Producto
++
++- Cada producto soporta de 0 a 6 colores con nombre descriptivo + código hexadecimal
++- Gestión desde el formulario admin (color picker + nombre) o vía endpoint `PUT /api/v1/products/{id}/colors`
++- También importables desde Excel (columnas opcionales: `categoría`, `descripción`, `marca`, `colores`)
++- En el catálogo, el usuario selecciona un color antes de agregar al carrito (default: primer color)
++- El color seleccionado aparece en: vista HTML del presupuesto, PDF descargable, texto WhatsApp y modal de confirmación
++
+ ## Variables de Entorno
+ 
+ | Variable | Valor por defecto | Descripción |
+@@ -135,5 +271,17 @@ El archivo `.xlsx` debe tener estas columnas (primera fila como headers):
+ 
+ | Clave | Valor | Descripción |
+ |-------|-------|-------------|
+-| `porcentaje_impuesto` | 18 | % de impuesto sobre subtotal |
+-| `tiempo_expiracion_link_minutos` | 30 | Minutos de validez del link |
++| `tax_rate` | 18 | % de impuesto sobre subtotal para nuevas cotizaciones |
++| `link_ttl_minutes` | 30 | Minutos de validez del link para nuevas cotizaciones |
++| `show_product_photos_in_pdf` | true | Activa/desactiva fotos de producto en PDF |
++| `site_title` | BUDGET MAKER | Título principal del sitio (navbar + pestaña) |
++| `site_subtitle` | Catálogo de Productos POP | Subtítulo mostrado en el catálogo |
++
++## Branding (logo e icono)
++
++- **Logo** (`site_logo`): Se sube vía `POST /api/v1/config/branding/site_logo` y se guarda en `uploads/branding/`. Se muestra en el navbar junto al título.
++- **Icono** (`site_icon`): Se sube vía `POST /api/v1/config/branding/site_icon` y se guarda en `uploads/branding/`. Se usa como favicon del sitio.
++- Formatos permitidos: PNG, JPEG, WebP, SVG, ICO. Tamaño máximo: 2MB.
++- Los archivos son públicos y accesibles en `/uploads/branding/{filename}`.
++- Se pueden eliminar con `DELETE /api/v1/config/branding/{key}`.
++- El frontend carga dinámicamente estos valores desde `/api/v1/config/` al iniciar la página.
+diff --git a/app/api/dependencies.py b/app/api/dependencies.py
+index bcf0bde..c1df287 100644
+--- a/app/api/dependencies.py
++++ b/app/api/dependencies.py
+@@ -1,18 +1,55 @@
++from fastapi import Depends, HTTPException
++from fastapi.security import OAuth2PasswordBearer
++
++from app.application.use_cases.auth_use_cases import AuthUseCases
+ from app.application.use_cases.budget_use_cases import BudgetUseCases
++from app.application.use_cases.category_use_cases import CategoryUseCases
+ from app.application.use_cases.config_use_cases import ConfigUseCases
+ from app.application.use_cases.product_use_cases import ProductUseCases
++from app.application.use_cases.user_use_cases import UserUseCases
++from app.domain.models.user import User
+ from app.infrastructure.repositories.budget_repo import BudgetRepository
++from app.infrastructure.repositories.category_repo import CategoryRepository
+ from app.infrastructure.repositories.config_repo import ConfigRepository
+ from app.infrastructure.repositories.product_repo import ProductRepository
++from app.infrastructure.repositories.user_repo import UserRepository
++from app.infrastructure.services.auth_service import decode_token
+ from app.infrastructure.services.excel_service import ExcelService
++from app.infrastructure.services.image_service import ImageService
+ from app.infrastructure.services.pdf_service import PdfService
+ 
++oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
++
+ # Instancias singleton de repositorios y servicios
+ _product_repo = ProductRepository()
+ _budget_repo = BudgetRepository()
+ _config_repo = ConfigRepository()
++_user_repo = UserRepository()
++_category_repo = CategoryRepository()
+ _excel_service = ExcelService()
+ _pdf_service = PdfService()
++_image_service = ImageService()
++
++
++async def get_current_user(token: str = Depends(oauth2_scheme)) -> User:
++    """Dependency que valida el JWT y retorna el usuario autenticado."""
++    payload = decode_token(token)
++    if not payload or "sub" not in payload:
++        raise HTTPException(status_code=401, detail="Token inválido o expirado")
++    user = await _user_repo.get_by_id(payload["sub"])
++    if not user:
++        raise HTTPException(status_code=401, detail="Usuario no encontrado")
++    if not user.is_active:
++        raise HTTPException(status_code=403, detail="Usuario desactivado")
++    return user
++
++
++def get_auth_use_cases() -> AuthUseCases:
++    return AuthUseCases(user_repo=_user_repo)
++
++
++def get_user_use_cases() -> UserUseCases:
++    return UserUseCases(repo=_user_repo)
+ 
+ 
+ def get_config_use_cases() -> ConfigUseCases:
+@@ -20,7 +57,16 @@ def get_config_use_cases() -> ConfigUseCases:
+ 
+ 
+ def get_product_use_cases() -> ProductUseCases:
+-    return ProductUseCases(repo=_product_repo, excel_service=_excel_service)
++    return ProductUseCases(
++        repo=_product_repo,
++        excel_service=_excel_service,
++        image_service=_image_service,
++        category_repo=_category_repo,
++    )
++
++
++def get_category_use_cases() -> CategoryUseCases:
++    return CategoryUseCases(repo=_category_repo, product_repo=_product_repo)
+ 
+ 
+ def get_budget_use_cases() -> BudgetUseCases:
+diff --git a/app/api/v1/budgets.py b/app/api/v1/budgets.py
+index 536946a..5b7fca0 100644
+--- a/app/api/v1/budgets.py
++++ b/app/api/v1/budgets.py
+@@ -14,14 +14,17 @@ async def list_budgets(uc: BudgetUseCases = Depends(get_budget_use_cases)):
+         BudgetResponse(
+             code=b.code, uuid=b.uuid, client_info=b.client_info,
+             items=b.items, subtotal=b.subtotal, tax_percent=b.tax_percent,
+-            tax_amount=b.tax_amount, total=b.total, created_at=b.created_at,
++            tax_amount=b.tax_amount, total=b.total, link_ttl_minutes=b.link_ttl_minutes, created_at=b.created_at,
+         )
+         for b in budgets
+     ]
+ 
+ 
+ @router.post("/", response_model=BudgetResponse, status_code=201)
+-async def create_budget(body: BudgetCreate, uc: BudgetUseCases = Depends(get_budget_use_cases)):
++async def create_budget(
++    body: BudgetCreate,
++    uc: BudgetUseCases = Depends(get_budget_use_cases),
++):
+     try:
+         budget = await uc.create_budget(body)
+     except ValueError as e:
+@@ -29,7 +32,7 @@ async def create_budget(body: BudgetCreate, uc: BudgetUseCases = Depends(get_bud
+     return BudgetResponse(
+         code=budget.code, uuid=budget.uuid, client_info=budget.client_info,
+         items=budget.items, subtotal=budget.subtotal, tax_percent=budget.tax_percent,
+-        tax_amount=budget.tax_amount, total=budget.total, created_at=budget.created_at,
++        tax_amount=budget.tax_amount, total=budget.total, link_ttl_minutes=budget.link_ttl_minutes, created_at=budget.created_at,
+     )
+ 
+ 
+@@ -41,5 +44,5 @@ async def get_budget(uuid: str, uc: BudgetUseCases = Depends(get_budget_use_case
+     return BudgetResponse(
+         code=budget.code, uuid=budget.uuid, client_info=budget.client_info,
+         items=budget.items, subtotal=budget.subtotal, tax_percent=budget.tax_percent,
+-        tax_amount=budget.tax_amount, total=budget.total, created_at=budget.created_at,
++        tax_amount=budget.tax_amount, total=budget.total, link_ttl_minutes=budget.link_ttl_minutes, created_at=budget.created_at,
+     )
+diff --git a/app/api/v1/config.py b/app/api/v1/config.py
+index 33f3a58..b9a2577 100644
+--- a/app/api/v1/config.py
++++ b/app/api/v1/config.py
+@@ -1,16 +1,56 @@
+-from fastapi import APIRouter, Depends, HTTPException
++from pathlib import Path
++
++from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+ 
+ from app.application.use_cases.config_use_cases import ConfigUseCases
+-from app.api.dependencies import get_config_use_cases
+-from app.domain.schemas.global_config import GlobalConfigResponse, GlobalConfigUpdate
++from app.api.dependencies import get_config_use_cases, get_current_user
++from app.domain.models.user import User
++from app.domain.schemas.global_config import (
++    GlobalBusinessConfigResponse,
++    GlobalBusinessConfigUpdate,
++    GlobalConfigResponse,
++    GlobalConfigUpdate,
++)
++from settings.config import Settings
+ 
+ router = APIRouter(prefix="/api/v1/config", tags=["Configuración"])
+ 
++_ALLOWED_IMAGE_TYPES = {"image/png", "image/jpeg", "image/webp", "image/svg+xml", "image/x-icon", "image/vnd.microsoft.icon"}
++_BRANDING_KEYS = {"site_logo", "site_icon"}
++
+ 
+ @router.get("/", response_model=list[GlobalConfigResponse])
+ async def list_config(uc: ConfigUseCases = Depends(get_config_use_cases)):
+     configs = await uc.get_all()
+-    return [GlobalConfigResponse(key=c.key, value=c.value, description=c.description) for c in configs]
++    return [GlobalConfigResponse(key=c["key"], value=c["value"], description=str(c["description"])) for c in configs]
++
++
++@router.get("/global", response_model=GlobalBusinessConfigResponse)
++async def get_global_config(uc: ConfigUseCases = Depends(get_config_use_cases)):
++    config = await uc.get_global_config()
++    return GlobalBusinessConfigResponse(
++        tax_rate=config.tax_rate,
++        link_ttl_minutes=config.link_ttl_minutes,
++        show_product_photos_in_pdf=config.show_product_photos_in_pdf,
++    )
++
++
++@router.put("/global", response_model=GlobalBusinessConfigResponse)
++async def update_global_config(
++    body: GlobalBusinessConfigUpdate,
++    _: User = Depends(get_current_user),
++    uc: ConfigUseCases = Depends(get_config_use_cases),
++):
++    config = await uc.update_global_config(
++        tax_rate=body.tax_rate,
++        link_ttl_minutes=body.link_ttl_minutes,
++        show_product_photos_in_pdf=body.show_product_photos_in_pdf,
++    )
++    return GlobalBusinessConfigResponse(
++        tax_rate=config.tax_rate,
++        link_ttl_minutes=config.link_ttl_minutes,
++        show_product_photos_in_pdf=config.show_product_photos_in_pdf,
++    )
+ 
+ 
+ @router.get("/{key}", response_model=GlobalConfigResponse)
+@@ -18,10 +58,59 @@ async def get_config(key: str, uc: ConfigUseCases = Depends(get_config_use_cases
+     config = await uc.get_by_key(key)
+     if not config:
+         raise HTTPException(status_code=404, detail=f"Config '{key}' no encontrada")
+-    return GlobalConfigResponse(key=config.key, value=config.value, description=config.description)
++    return GlobalConfigResponse(key=str(config["key"]), value=config["value"], description=str(config["description"]))
+ 
+ 
+ @router.put("/{key}", response_model=GlobalConfigResponse)
+-async def update_config(key: str, body: GlobalConfigUpdate, uc: ConfigUseCases = Depends(get_config_use_cases)):
++async def update_config(
++    key: str,
++    body: GlobalConfigUpdate,
++    _: User = Depends(get_current_user),
++    uc: ConfigUseCases = Depends(get_config_use_cases),
++):
+     config = await uc.update(key, body.value, body.description)
+-    return GlobalConfigResponse(key=config.key, value=config.value, description=config.description)
++    return GlobalConfigResponse(key=str(config["key"]), value=config["value"], description=str(config["description"]))
++
++
++@router.post("/branding/{key}")
++async def upload_branding(
++    key: str,
++    file: UploadFile = File(...),
++    _: User = Depends(get_current_user),
++    uc: ConfigUseCases = Depends(get_config_use_cases),
++):
++    """Sube logo o icono del sitio. key debe ser 'site_logo' o 'site_icon'."""
++    if key not in _BRANDING_KEYS:
++        raise HTTPException(status_code=422, detail=f"Clave inválida. Usar: {_BRANDING_KEYS}")
++    if not file.content_type or file.content_type not in _ALLOWED_IMAGE_TYPES:
++        raise HTTPException(status_code=422, detail="Formato no soportado. Usar PNG, JPEG, WebP, SVG o ICO")
++    content = await file.read()
++    settings = Settings()
++    if len(content) > settings.max_image_size_mb * 1024 * 1024:
++        raise HTTPException(status_code=422, detail=f"Archivo excede {settings.max_image_size_mb}MB")
++    ext = Path(file.filename).suffix if file.filename else ".png"
++    filename = f"{key}{ext}"
++    branding_path = Path(settings.branding_dir)
++    # Remove old files with different extension
++    for old in branding_path.glob(f"{key}.*"):
++        old.unlink()
++    (branding_path / filename).write_bytes(content)
++    url = f"/uploads/branding/{filename}"
++    config = await uc.update(key, url, f"{'Logo' if key == 'site_logo' else 'Icono'} del sitio")
++    return GlobalConfigResponse(key=str(config["key"]), value=config["value"], description=str(config["description"]))
++
++
++@router.delete("/branding/{key}")
++async def delete_branding(
++    key: str,
++    _: User = Depends(get_current_user),
++    uc: ConfigUseCases = Depends(get_config_use_cases),
++):
++    """Elimina logo o icono del sitio."""
++    if key not in _BRANDING_KEYS:
++        raise HTTPException(status_code=422, detail=f"Clave inválida. Usar: {_BRANDING_KEYS}")
++    settings = Settings()
++    for old in Path(settings.branding_dir).glob(f"{key}.*"):
++        old.unlink()
++    config = await uc.update(key, "", f"{'Logo' if key == 'site_logo' else 'Icono'} del sitio")
++    return GlobalConfigResponse(key=str(config["key"]), value=config["value"], description=str(config["description"]))
+diff --git a/app/api/v1/products.py b/app/api/v1/products.py
+index b7d77c9..a8efa41 100644
+--- a/app/api/v1/products.py
++++ b/app/api/v1/products.py
+@@ -1,52 +1,143 @@
+-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
++from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, File
+ 
+-from app.application.use_cases.product_use_cases import ProductUseCases
+-from app.api.dependencies import get_product_use_cases
+-from app.domain.schemas.product import ProductCreate, ProductUpdate, ProductResponse
++from app.application.use_cases.product_use_cases import ProductUseCases, build_product_response
++from app.api.dependencies import get_current_user, get_product_use_cases
++from app.domain.models.user import User
++from app.domain.schemas.product import ProductColorsUpdate, ProductCreate, ProductUpdate, ProductResponse
++from app.domain.schemas.search import PaginatedResponse, ProductSearchParams, SortBy
+ 
+ router = APIRouter(prefix="/api/v1/products", tags=["Productos"])
+ 
+ 
++@router.get("/search", response_model=PaginatedResponse[ProductResponse])
++async def search_products(
++    request: Request,
++    q: str | None = None,
++    sku: str | None = None,
++    category_id: str | None = None,
++    category_slug: str | None = None,
++    min_price: float | None = None,
++    max_price: float | None = None,
++    page: int = Query(1, ge=1),
++    limit: int = Query(20, ge=1, le=100),
++    sort_by: SortBy = SortBy.name_asc,
++    uc: ProductUseCases = Depends(get_product_use_cases),
++):
++    params = ProductSearchParams(
++        q=q, sku=sku, category_id=category_id, category_slug=category_slug,
++        min_price=min_price, max_price=max_price, page=page, limit=limit, sort_by=sort_by,
++    )
++    return await uc.search(params, str(request.base_url))
++
++
+ @router.get("/", response_model=list[ProductResponse])
+-async def list_products(uc: ProductUseCases = Depends(get_product_use_cases)):
++async def list_products(request: Request, uc: ProductUseCases = Depends(get_product_use_cases)):
+     products = await uc.list_all()
+-    return [
+-        ProductResponse(id=str(p.id), name=p.name, sku=p.sku, cost=p.cost, unit=p.unit, currency=p.currency)
+-        for p in products
+-    ]
++    return [build_product_response(p, str(request.base_url)) for p in products]
+ 
+ 
+ @router.get("/{product_id}", response_model=ProductResponse)
+-async def get_product(product_id: str, uc: ProductUseCases = Depends(get_product_use_cases)):
++async def get_product(product_id: str, request: Request, uc: ProductUseCases = Depends(get_product_use_cases)):
+     product = await uc.get_by_id(product_id)
+     if not product:
+         raise HTTPException(status_code=404, detail="Producto no encontrado")
+-    return ProductResponse(id=str(product.id), name=product.name, sku=product.sku, cost=product.cost, unit=product.unit, currency=product.currency)
++    categories = await uc.enrich_categories(product)
++    return build_product_response(product, str(request.base_url), categories)
+ 
+ 
+ @router.post("/", response_model=ProductResponse, status_code=201)
+-async def create_product(body: ProductCreate, uc: ProductUseCases = Depends(get_product_use_cases)):
++async def create_product(
++    body: ProductCreate,
++    request: Request,
++    _: User = Depends(get_current_user),
++    uc: ProductUseCases = Depends(get_product_use_cases),
++):
+     product = await uc.create(body)
+-    return ProductResponse(id=str(product.id), name=product.name, sku=product.sku, cost=product.cost, unit=product.unit, currency=product.currency)
++    return build_product_response(product, str(request.base_url))
+ 
+ 
+ @router.put("/{product_id}", response_model=ProductResponse)
+-async def update_product(product_id: str, body: ProductUpdate, uc: ProductUseCases = Depends(get_product_use_cases)):
++async def update_product(
++    product_id: str,
++    body: ProductUpdate,
++    request: Request,
++    _: User = Depends(get_current_user),
++    uc: ProductUseCases = Depends(get_product_use_cases),
++):
+     product = await uc.update(product_id, body)
+     if not product:
+         raise HTTPException(status_code=404, detail="Producto no encontrado")
+-    return ProductResponse(id=str(product.id), name=product.name, sku=product.sku, cost=product.cost, unit=product.unit, currency=product.currency)
++    return build_product_response(product, str(request.base_url))
+ 
+ 
+ @router.delete("/{product_id}", status_code=204)
+-async def delete_product(product_id: str, uc: ProductUseCases = Depends(get_product_use_cases)):
++async def delete_product(
++    product_id: str,
++    _: User = Depends(get_current_user),
++    uc: ProductUseCases = Depends(get_product_use_cases),
++):
+     deleted = await uc.delete(product_id)
+     if not deleted:
+         raise HTTPException(status_code=404, detail="Producto no encontrado")
+ 
+ 
++@router.post("/{product_id}/image", response_model=ProductResponse)
++async def upload_product_image(
++    product_id: str,
++    request: Request,
++    file: UploadFile = File(...),
++    _: User = Depends(get_current_user),
++    uc: ProductUseCases = Depends(get_product_use_cases),
++):
++    """Sube o reemplaza la imagen de un producto."""
++    from app.infrastructure.services.image_service import ImageService
++    svc = ImageService()
++    try:
++        content = await svc.validate_image(file)
++    except ValueError as e:
++        raise HTTPException(status_code=422, detail=str(e))
++    try:
++        product = await uc.upload_image(product_id, content, file.filename or "image.jpg")
++    except ValueError as e:
++        raise HTTPException(status_code=404, detail=str(e))
++    return build_product_response(product, str(request.base_url))
++
++
++@router.delete("/{product_id}/image", response_model=ProductResponse)
++async def delete_product_image(
++    product_id: str,
++    request: Request,
++    _: User = Depends(get_current_user),
++    uc: ProductUseCases = Depends(get_product_use_cases),
++):
++    """Elimina la imagen de un producto."""
++    try:
++        product = await uc.delete_image(product_id)
++    except ValueError as e:
++        raise HTTPException(status_code=404, detail=str(e))
++    return build_product_response(product, str(request.base_url))
++
++
++@router.put("/{product_id}/colors", response_model=ProductResponse)
++async def update_product_colors(
++    product_id: str,
++    body: ProductColorsUpdate,
++    request: Request,
++    _: User = Depends(get_current_user),
++    uc: ProductUseCases = Depends(get_product_use_cases),
++):
++    product = await uc.update_colors(product_id, body)
++    if not product:
++        raise HTTPException(status_code=404, detail="Producto no encontrado")
++    return build_product_response(product, str(request.base_url))
++
++
+ @router.post("/import")
+-async def import_products(file: UploadFile = File(...), uc: ProductUseCases = Depends(get_product_use_cases)):
++async def import_products(
++    file: UploadFile = File(...),
++    _: User = Depends(get_current_user),
++    uc: ProductUseCases = Depends(get_product_use_cases),
++):
+     """Importa productos desde un archivo .xlsx con regla upsert por SKU."""
+     if not file.filename or not file.filename.endswith(".xlsx"):
+         raise HTTPException(status_code=422, detail="Solo se aceptan archivos .xlsx")
+diff --git a/app/application/use_cases/budget_use_cases.py b/app/application/use_cases/budget_use_cases.py
+index c1cd2c4..fce2f27 100644
+--- a/app/application/use_cases/budget_use_cases.py
++++ b/app/application/use_cases/budget_use_cases.py
+@@ -37,17 +37,35 @@ class BudgetUseCases:
+             if not product:
+                 raise ValueError(f"Producto no encontrado: {item_req.sku}")
+             line_total = product.cost * item_req.quantity
++
++            color_name = None
++            color_hex = None
++            if product.colors:
++                if item_req.color_hex:
++                    match = next((c for c in product.colors if c.hex.upper() == item_req.color_hex.upper()), None)
++                    if match:
++                        color_name, color_hex = match.name, match.hex
++                    else:
++                        color_name = product.colors[0].name
++                        color_hex = product.colors[0].hex
++                else:
++                    color_name = product.colors[0].name
++                    color_hex = product.colors[0].hex
++
+             items.append(BudgetItem(
+                 sku=product.sku,
+                 name=product.name,
+                 quantity=item_req.quantity,
+                 unit_cost=product.cost,
+                 line_total=line_total,
++                color_name=color_name,
++                color_hex=color_hex,
+             ))
+             subtotal += line_total
+ 
+-        tax_config = await self._config_repo.get_by_key("porcentaje_impuesto")
+-        tax_percent = float(tax_config.value) if tax_config else 18.0
++        config = await self._config_repo.get_effective_global_config()
++        tax_percent = float(config.tax_rate)
++        link_ttl_minutes = int(config.link_ttl_minutes)
+         tax_amount = subtotal * (tax_percent / 100)
+         total = subtotal + tax_amount
+ 
+@@ -63,6 +81,7 @@ class BudgetUseCases:
+             "tax_percent": tax_percent,
+             "tax_amount": round(tax_amount, 2),
+             "total": round(total, 2),
++            "link_ttl_minutes": link_ttl_minutes,
+         }
+         return await self._budget_repo.create(budget_data)
+ 
+@@ -71,8 +90,7 @@ class BudgetUseCases:
+ 
+     async def is_expired(self, budget: Budget) -> bool:
+         """Verifica si el link del presupuesto ha expirado."""
+-        config = await self._config_repo.get_by_key("tiempo_expiracion_link_minutos")
+-        minutes = int(config.value) if config else 30
++        minutes = int(budget.link_ttl_minutes)
+         now = datetime.now(timezone.utc)
+         created = budget.created_at.replace(tzinfo=timezone.utc) if budget.created_at.tzinfo is None else budget.created_at
+         elapsed = (now - created).total_seconds() / 60
+@@ -96,7 +114,8 @@ class BudgetUseCases:
+             f"*{total_lines} líneas · {total_units} unidades*",
+         ]
+         for item in budget.items:
+-            lines.append(f"• {item.sku} · {item.name} · {item.quantity}x ${item.unit_cost:.2f}")
++            color_info = f" · {item.color_name} ({item.color_hex})" if item.color_name else ""
++            lines.append(f"• {item.sku} · {item.name}{color_info} · {item.quantity}x ${item.unit_cost:.2f}")
+         lines.append("*TOTALES:*")
+         lines.append(f"Subtotal: ${budget.subtotal:.2f}")
+         lines.append(f"Total con impuestos: ${budget.total:.2f}")
+diff --git a/app/application/use_cases/config_use_cases.py b/app/application/use_cases/config_use_cases.py
+index 4d9d398..37caf5b 100644
+--- a/app/application/use_cases/config_use_cases.py
++++ b/app/application/use_cases/config_use_cases.py
+@@ -1,6 +1,8 @@
+ from app.domain.models.global_config import GlobalConfig
+ from app.infrastructure.repositories.config_repo import ConfigRepository
+ 
++ConfigValue = float | str | int | bool
++
+ 
+ class ConfigUseCases:
+     """Casos de uso para configuración global."""
+@@ -8,20 +10,44 @@ class ConfigUseCases:
+     def __init__(self, repo: ConfigRepository) -> None:
+         self._repo = repo
+ 
+-    async def get_all(self) -> list[GlobalConfig]:
++    async def get_all(self) -> list[dict[str, ConfigValue | str]]:
+         return await self._repo.get_all()
+ 
+-    async def get_by_key(self, key: str) -> GlobalConfig | None:
++    async def get_by_key(self, key: str) -> dict[str, ConfigValue | str] | None:
+         return await self._repo.get_by_key(key)
+ 
+-    async def update(self, key: str, value: float | str | int, description: str | None = None) -> GlobalConfig:
++    async def update(self, key: str, value: ConfigValue, description: str | None = None) -> dict[str, ConfigValue | str]:
+         return await self._repo.set_value(key, value, description or "")
+ 
++    async def get_global_config(self) -> GlobalConfig:
++        return await self._repo.get_effective_global_config()
++
++    async def update_global_config(
++        self,
++        tax_rate: float,
++        link_ttl_minutes: int,
++        show_product_photos_in_pdf: bool,
++    ) -> GlobalConfig:
++        return await self._repo.update_global_config(
++            tax_rate=tax_rate,
++            link_ttl_minutes=link_ttl_minutes,
++            show_product_photos_in_pdf=show_product_photos_in_pdf,
++        )
++
+     async def seed_defaults(self) -> None:
+-        """Crea valores iniciales si no existen."""
++        """Asegura el documento global tipado y valores auxiliares requeridos."""
++        config = await self._repo.ensure_global_config()
++        if "tax_rate" not in config.descriptions:
++            config.descriptions["tax_rate"] = "Porcentaje de impuesto aplicado al presupuesto"
++        if "link_ttl_minutes" not in config.descriptions:
++            config.descriptions["link_ttl_minutes"] = "Minutos antes de que expire el link del presupuesto"
++        if "show_product_photos_in_pdf" not in config.descriptions:
++            config.descriptions["show_product_photos_in_pdf"] = "Define si el PDF muestra fotos de productos"
++        await config.save()
++
+         defaults = [
+-            ("porcentaje_impuesto", 18, "Porcentaje de impuesto aplicado al presupuesto"),
+-            ("tiempo_expiracion_link_minutos", 30, "Minutos antes de que expire el link del presupuesto"),
++            ("site_title", "BUDGET MAKER", "Título principal del sitio"),
++            ("site_subtitle", "Catálogo de Productos POP", "Subtítulo del sitio"),
+         ]
+         for key, value, desc in defaults:
+             existing = await self._repo.get_by_key(key)
+diff --git a/app/application/use_cases/product_use_cases.py b/app/application/use_cases/product_use_cases.py
+index c50dadf..8893d2e 100644
+--- a/app/application/use_cases/product_use_cases.py
++++ b/app/application/use_cases/product_use_cases.py
+@@ -1,15 +1,64 @@
++from beanie import PydanticObjectId
++
+ from app.domain.models.product import Product
+-from app.domain.schemas.product import ProductCreate, ProductUpdate
++from app.domain.schemas.category import CategoryResponse
++from app.domain.schemas.product import ProductColorsUpdate, ProductCreate, ProductResponse, ProductUpdate, ProductColorSchema
++from app.domain.schemas.search import PaginatedResponse, ProductSearchParams
++from app.infrastructure.repositories.category_repo import CategoryRepository
+ from app.infrastructure.repositories.product_repo import ProductRepository
+ from app.infrastructure.services.excel_service import ExcelService
++from app.infrastructure.services.image_service import ImageService
++
++
++def _build_image_url(product: Product, base_url: str) -> str | None:
++    if not product.image_filename:
++        return None
++    return f"{base_url}uploads/products/{product.image_filename}"
++
++
++async def _enrich_categories(product: Product, category_repo: CategoryRepository) -> list[CategoryResponse]:
++    """Resuelve category_ids a CategoryResponse."""
++    if not product.category_ids:
++        return []
++    cats = []
++    for cid in product.category_ids:
++        cat = await category_repo.get_by_id(str(cid))
++        if cat:
++            cats.append(CategoryResponse(id=str(cat.id), name=cat.name, slug=cat.slug, description=cat.description, is_active=cat.is_active))
++    return cats
++
++
++def build_product_response(product: Product, base_url: str, categories: list[CategoryResponse] | None = None) -> ProductResponse:
++    return ProductResponse(
++        id=str(product.id),
++        name=product.name,
++        sku=product.sku,
++        description=product.description,
++        brand=product.brand,
++        cost=product.cost,
++        unit=product.unit,
++        currency=product.currency,
++        image_url=_build_image_url(product, base_url),
++        category_ids=[str(cid) for cid in product.category_ids],
++        categories=categories or [],
++        colors=[ProductColorSchema(name=c.name, hex=c.hex) for c in product.colors],
++    )
+ 
+ 
+ class ProductUseCases:
+     """Casos de uso para gestión de productos."""
+ 
+-    def __init__(self, repo: ProductRepository, excel_service: ExcelService) -> None:
++    def __init__(
++        self,
++        repo: ProductRepository,
++        excel_service: ExcelService,
++        image_service: ImageService,
++        category_repo: CategoryRepository,
++    ) -> None:
+         self._repo = repo
+         self._excel = excel_service
++        self._image = image_service
++        self._category_repo = category_repo
+ 
+     async def list_all(self) -> list[Product]:
+         return await self._repo.get_all()
+@@ -18,16 +67,73 @@ class ProductUseCases:
+         return await self._repo.get_by_id(product_id)
+ 
+     async def create(self, data: ProductCreate) -> Product:
+-        return await self._repo.create(data.model_dump())
++        dump = data.model_dump()
++        if dump.get("category_ids"):
++            dump["category_ids"] = [PydanticObjectId(cid) for cid in dump["category_ids"]]
++        return await self._repo.create(dump)
+ 
+     async def update(self, product_id: str, data: ProductUpdate) -> Product | None:
+         update_data = data.model_dump(exclude_none=True)
++        if "category_ids" in update_data:
++            update_data["category_ids"] = [PydanticObjectId(cid) for cid in update_data["category_ids"]]
+         if not update_data:
+             return await self._repo.get_by_id(product_id)
+         return await self._repo.update(product_id, update_data)
+ 
++    async def update_colors(self, product_id: str, data: ProductColorsUpdate) -> Product | None:
++        product = await self._repo.get_by_id(product_id)
++        if not product:
++            return None
++        await product.set({"colors": [c.model_dump() for c in data.colors]})
++        return product
++
+     async def delete(self, product_id: str) -> bool:
+-        return await self._repo.delete(product_id)
++        """Elimina producto y su imagen del disco (cascade)."""
++        product = await self._repo.get_by_id(product_id)
++        if not product:
++            return False
++        if product.image_filename:
++            self._image.delete_image(product.image_filename)
++        await product.delete()
++        return True
++
++    async def upload_image(self, product_id: str, content: bytes, original_filename: str) -> Product:
++        """Sube o reemplaza la imagen de un producto."""
++        product = await self._repo.get_by_id(product_id)
++        if not product:
++            raise ValueError("Producto no encontrado")
++        if product.image_filename:
++            self._image.delete_image(product.image_filename)
++        filename = self._image.save_image(content, product_id, original_filename)
++        await product.set({"image_filename": filename})
++        return product
++
++    async def delete_image(self, product_id: str) -> Product:
++        """Elimina la imagen de un producto."""
++        product = await self._repo.get_by_id(product_id)
++        if not product:
++            raise ValueError("Producto no encontrado")
++        if product.image_filename:
++            self._image.delete_image(product.image_filename)
++            await product.set({"image_filename": None})
++        return product
++
++    async def search(self, params: ProductSearchParams, base_url: str) -> PaginatedResponse[ProductResponse]:
++        """Búsqueda avanzada con resolución de slug y enriquecimiento."""
++        resolved_cat_id: str | None = None
++        if params.category_slug:
++            cat = await self._category_repo.get_by_slug(params.category_slug)
++            if cat:
++                resolved_cat_id = str(cat.id)
++            else:
++                return PaginatedResponse.build(items=[], total=0, page=params.page, limit=params.limit)
++
++        products, total = await self._repo.search(params, resolved_cat_id)
++        items = [build_product_response(p, base_url) for p in products]
++        return PaginatedResponse.build(items=items, total=total, page=params.page, limit=params.limit)
++
++    async def enrich_categories(self, product: Product) -> list[CategoryResponse]:
++        return await _enrich_categories(product, self._category_repo)
+ 
+     async def bulk_import_from_excel(self, file_bytes: bytes) -> dict[str, int]:
+         """Importa productos desde Excel con regla upsert por SKU."""
+@@ -35,6 +141,14 @@ class ProductUseCases:
+         created = 0
+         updated = 0
+         for data in products_data:
++            slugs = data.pop("_category_slugs", None)
++            if slugs:
++                cat_ids = []
++                for slug in slugs:
++                    cat = await self._category_repo.get_by_slug(slug)
++                    if cat:
++                        cat_ids.append(PydanticObjectId(str(cat.id)))
++                data["category_ids"] = cat_ids
+             existing = await self._repo.get_by_sku(data["sku"])
+             await self._repo.upsert_by_sku(data)
+             if existing:
+diff --git a/app/database.py b/app/database.py
+index 57779d5..d910948 100644
+--- a/app/database.py
++++ b/app/database.py
+@@ -10,13 +10,15 @@ logger = logging.getLogger(__name__)
+ 
+ async def init_db() -> None:
+     """Inicializa la conexión a MongoDB y registra los documentos Beanie."""
++    from app.domain.models.budget import Budget
++    from app.domain.models.category import Category
+     from app.domain.models.global_config import GlobalConfig
+     from app.domain.models.product import Product
+-    from app.domain.models.budget import Budget
++    from app.domain.models.user import User
+ 
+     client = AsyncIOMotorClient(settings.mongo_uri)
+     await init_beanie(
+         database=client[settings.mongo_db_name],
+-        document_models=[GlobalConfig, Product, Budget],
++        document_models=[GlobalConfig, Product, Budget, User, Category],
+     )
+     logger.info("Base de datos inicializada: %s", settings.mongo_db_name)
+diff --git a/app/domain/models/budget.py b/app/domain/models/budget.py
+index edbe66f..19e20bf 100644
+--- a/app/domain/models/budget.py
++++ b/app/domain/models/budget.py
+@@ -24,6 +24,8 @@ class BudgetItem(BaseModel):
+     quantity: int
+     unit_cost: float
+     line_total: float = 0.0
++    color_name: str | None = None
++    color_hex: str | None = None
+ 
+ 
+ class Budget(Document):
+@@ -37,6 +39,7 @@ class Budget(Document):
+     tax_percent: float = 0.0
+     tax_amount: float = 0.0
+     total: float = 0.0
++    link_ttl_minutes: int = 30
+     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+ 
+     class Settings:
+diff --git a/app/domain/models/global_config.py b/app/domain/models/global_config.py
+index 93ba5fe..0f0a62c 100644
+--- a/app/domain/models/global_config.py
++++ b/app/domain/models/global_config.py
+@@ -1,12 +1,24 @@
+-from beanie import Document, Indexed
++from beanie import Document
++from pydantic import Field
++from pymongo import IndexModel
+ 
+ 
+ class GlobalConfig(Document):
+-    """Configuración global dinámica del sistema."""
++    """Configuración global tipada del negocio con espacio para claves auxiliares."""
+ 
+-    key: Indexed(str, unique=True)
+-    value: float | str | int
+-    description: str = ""
++    singleton_key: str = Field(default="global", description="Identificador único del documento global")
++    tax_rate: float = Field(default=18.0, ge=0, le=100)
++    link_ttl_minutes: int = Field(default=30, ge=1, le=10080)
++    show_product_photos_in_pdf: bool = True
++    extra_settings: dict[str, float | str | int | bool] = Field(default_factory=dict)
++    descriptions: dict[str, str] = Field(default_factory=dict)
+ 
+     class Settings:
+         name = "global_config"
++        indexes = [
++            IndexModel(
++                [("singleton_key", 1)],
++                unique=True,
++                partialFilterExpression={"singleton_key": {"$exists": True}},
++            ),
++        ]
+diff --git a/app/domain/models/product.py b/app/domain/models/product.py
+index 454f41b..04bf7ec 100644
+--- a/app/domain/models/product.py
++++ b/app/domain/models/product.py
+@@ -1,4 +1,11 @@
+-from beanie import Document, Indexed
++import pymongo
++from beanie import Document, Indexed, PydanticObjectId
++from pydantic import BaseModel
++
++
++class ProductColor(BaseModel):
++    name: str
++    hex: str
+ 
+ 
+ class Product(Document):
+@@ -6,9 +13,17 @@ class Product(Document):
+ 
+     name: str
+     sku: Indexed(str, unique=True)
++    description: str = ""
++    brand: str = ""
+     cost: float
+     unit: str = "unidad"
+     currency: str = "USD"
++    image_filename: str | None = None
++    category_ids: list[PydanticObjectId] = []
++    colors: list[ProductColor] = []
+ 
+     class Settings:
+         name = "products"
++        indexes = [
++            [("name", pymongo.TEXT)],
++        ]
+diff --git a/app/domain/schemas/budget.py b/app/domain/schemas/budget.py
+index 39485ab..1afc0d5 100644
+--- a/app/domain/schemas/budget.py
++++ b/app/domain/schemas/budget.py
+@@ -8,6 +8,7 @@ from app.domain.models.budget import BudgetItem, ClientInfo
+ class BudgetItemCreate(BaseModel):
+     sku: str
+     quantity: int
++    color_hex: str | None = None
+ 
+ 
+ class BudgetCreate(BaseModel):
+@@ -24,4 +25,5 @@ class BudgetResponse(BaseModel):
+     tax_percent: float
+     tax_amount: float
+     total: float
++    link_ttl_minutes: int
+     created_at: datetime
+diff --git a/app/domain/schemas/global_config.py b/app/domain/schemas/global_config.py
+index 1f1f9c0..91f6a8f 100644
+--- a/app/domain/schemas/global_config.py
++++ b/app/domain/schemas/global_config.py
+@@ -1,12 +1,26 @@
+-from pydantic import BaseModel
++from pydantic import BaseModel, Field
++
++ConfigValue = float | str | int | bool
+ 
+ 
+ class GlobalConfigResponse(BaseModel):
+     key: str
+-    value: float | str | int
++    value: ConfigValue
+     description: str
+ 
+ 
+ class GlobalConfigUpdate(BaseModel):
+-    value: float | str | int
++    value: ConfigValue
+     description: str | None = None
++
++
++class GlobalBusinessConfigResponse(BaseModel):
++    tax_rate: float
++    link_ttl_minutes: int
++    show_product_photos_in_pdf: bool
++
++
++class GlobalBusinessConfigUpdate(BaseModel):
++    tax_rate: float = Field(..., ge=0, le=100)
++    link_ttl_minutes: int = Field(..., ge=1, le=10080)
++    show_product_photos_in_pdf: bool
+diff --git a/app/domain/schemas/product.py b/app/domain/schemas/product.py
+index 1eac515..ce01af0 100644
+--- a/app/domain/schemas/product.py
++++ b/app/domain/schemas/product.py
+@@ -1,25 +1,82 @@
+-from pydantic import BaseModel
++import re
++
++from pydantic import BaseModel, field_validator
++
++from app.domain.schemas.category import CategoryResponse
++
++_HEX_RE = re.compile(r"^#[0-9A-Fa-f]{6}$")
++
++
++class ProductColorSchema(BaseModel):
++    name: str
++    hex: str
++
++    @field_validator("hex")
++    @classmethod
++    def validate_hex(cls, v: str) -> str:
++        if not _HEX_RE.match(v):
++            raise ValueError("El color debe ser un código hexadecimal válido, ej: #FF0000")
++        return v.upper()
++
++
++class ProductColorsUpdate(BaseModel):
++    colors: list[ProductColorSchema]
++
++    @field_validator("colors")
++    @classmethod
++    def max_colors(cls, v: list[ProductColorSchema]) -> list[ProductColorSchema]:
++        if len(v) > 6:
++            raise ValueError("Un producto puede tener máximo 6 colores")
++        return v
+ 
+ 
+ class ProductCreate(BaseModel):
+     name: str
+     sku: str
++    description: str = ""
++    brand: str = ""
+     cost: float
+     unit: str = "unidad"
+     currency: str = "USD"
++    category_ids: list[str] = []
++    colors: list[ProductColorSchema] = []
++
++    @field_validator("colors")
++    @classmethod
++    def max_colors(cls, v: list[ProductColorSchema]) -> list[ProductColorSchema]:
++        if len(v) > 6:
++            raise ValueError("Un producto puede tener máximo 6 colores")
++        return v
+ 
+ 
+ class ProductUpdate(BaseModel):
+     name: str | None = None
++    description: str | None = None
++    brand: str | None = None
+     cost: float | None = None
+     unit: str | None = None
+     currency: str | None = None
++    category_ids: list[str] | None = None
++    colors: list[ProductColorSchema] | None = None
++
++    @field_validator("colors")
++    @classmethod
++    def max_colors(cls, v: list[ProductColorSchema] | None) -> list[ProductColorSchema] | None:
++        if v is not None and len(v) > 6:
++            raise ValueError("Un producto puede tener máximo 6 colores")
++        return v
+ 
+ 
+ class ProductResponse(BaseModel):
+     id: str
+     name: str
+     sku: str
++    description: str = ""
++    brand: str = ""
+     cost: float
+     unit: str
+     currency: str
++    image_url: str | None = None
++    category_ids: list[str] = []
++    categories: list[CategoryResponse] = []
++    colors: list[ProductColorSchema] = []
+diff --git a/app/infrastructure/repositories/config_repo.py b/app/infrastructure/repositories/config_repo.py
+index 62c179b..9cae8cd 100644
+--- a/app/infrastructure/repositories/config_repo.py
++++ b/app/infrastructure/repositories/config_repo.py
+@@ -4,23 +4,194 @@ from app.domain.models.global_config import GlobalConfig
+ 
+ logger = logging.getLogger(__name__)
+ 
++ConfigValue = float | str | int | bool
++
++_LEGACY_TAX_KEY = "porcentaje_impuesto"
++_LEGACY_TTL_KEY = "tiempo_expiracion_link_minutos"
++_KEY_ALIASES = {
++    _LEGACY_TAX_KEY: "tax_rate",
++    _LEGACY_TTL_KEY: "link_ttl_minutes",
++}
++
+ 
+ class ConfigRepository:
+-    """Repositorio para configuración global (clave-valor)."""
+-
+-    async def get_all(self) -> list[GlobalConfig]:
+-        return await GlobalConfig.find_all().to_list()
+-
+-    async def get_by_key(self, key: str) -> GlobalConfig | None:
+-        return await GlobalConfig.find_one(GlobalConfig.key == key)
+-
+-    async def set_value(self, key: str, value: float | str | int, description: str = "") -> GlobalConfig:
+-        """Crea o actualiza una configuración por clave."""
+-        existing = await self.get_by_key(key)
+-        if existing:
+-            await existing.set({"value": value, "description": description or existing.description})
+-            return existing
+-        config = GlobalConfig(key=key, value=value, description=description)
+-        await config.insert()
+-        logger.info("Config creada: %s = %s", key, value)
++    """Repositorio para configuración global tipada con compatibilidad legacy."""
++
++    async def get_global_config(self) -> GlobalConfig | None:
++        return await GlobalConfig.find_one(GlobalConfig.singleton_key == "global")
++
++    async def get_effective_global_config(self) -> GlobalConfig:
++        config = await self.get_global_config()
++        if config:
++            return config
++
++        legacy_values = await self._load_legacy_business_values()
++        missing = [key for key in ("tax_rate", "link_ttl_minutes") if key not in legacy_values]
++        if missing:
++            raise ValueError(f"Configuración global incompleta. Faltan valores críticos: {', '.join(missing)}")
++
++        show_photos = legacy_values.get("show_product_photos_in_pdf", True)
++        return GlobalConfig(
++            tax_rate=legacy_values["tax_rate"],
++            link_ttl_minutes=legacy_values["link_ttl_minutes"],
++            show_product_photos_in_pdf=bool(show_photos),
++        )
++
++    async def ensure_global_config(self) -> GlobalConfig:
++        config = await self.get_global_config()
++        if config:
++            return config
++
++        try:
++            fallback = await self.get_effective_global_config()
++        except ValueError:
++            fallback = GlobalConfig()
++
++        await fallback.insert()
++        logger.info("Configuración global tipada inicializada")
++        return fallback
++
++    async def get_all(self) -> list[dict[str, ConfigValue | str]]:
++        config = await self.get_global_config()
++        entries: list[dict[str, ConfigValue | str]] = []
++        if config:
++            entries.extend(self._entries_from_typed_config(config))
++            return entries
++
++        legacy_entries = await self._load_legacy_entries()
++        return legacy_entries
++
++    async def get_by_key(self, key: str) -> dict[str, ConfigValue | str] | None:
++        config = await self.get_global_config()
++        if config:
++            return self._entry_from_typed_config(config, key)
++
++        legacy = await self._get_legacy_by_key(key)
++        if not legacy:
++            return None
++        return {
++            "key": legacy["key"],
++            "value": legacy["value"],
++            "description": str(legacy.get("description", "")),
++        }
++
++    async def set_value(self, key: str, value: ConfigValue, description: str = "") -> dict[str, ConfigValue | str]:
++        config = await self.ensure_global_config()
++
++        normalized_key = _KEY_ALIASES.get(key, key)
++        if normalized_key == "tax_rate":
++            config.tax_rate = float(value)
++        elif normalized_key == "link_ttl_minutes":
++            config.link_ttl_minutes = int(value)
++        elif normalized_key == "show_product_photos_in_pdf":
++            config.show_product_photos_in_pdf = bool(value)
++        else:
++            config.extra_settings[normalized_key] = value
++
++        if description:
++            config.descriptions[normalized_key] = description
++        elif normalized_key not in config.descriptions:
++            config.descriptions[normalized_key] = ""
++
++        await config.save()
++        logger.info("Config actualizada: %s = %s", key, value)
++
++        entry = self._entry_from_typed_config(config, key)
++        if not entry:
++            raise ValueError(f"No se pudo persistir la configuración para la clave '{key}'")
++        return entry
++
++    async def update_global_config(
++        self,
++        tax_rate: float,
++        link_ttl_minutes: int,
++        show_product_photos_in_pdf: bool,
++    ) -> GlobalConfig:
++        config = await self.ensure_global_config()
++        config.tax_rate = tax_rate
++        config.link_ttl_minutes = link_ttl_minutes
++        config.show_product_photos_in_pdf = show_product_photos_in_pdf
++        await config.save()
+         return config
++
++    def _entries_from_typed_config(self, config: GlobalConfig) -> list[dict[str, ConfigValue | str]]:
++        entries: list[dict[str, ConfigValue | str]] = [
++            {
++                "key": "show_product_photos_in_pdf",
++                "value": config.show_product_photos_in_pdf,
++                "description": self._description(config, "show_product_photos_in_pdf"),
++            },
++            {"key": _LEGACY_TAX_KEY, "value": config.tax_rate, "description": self._description(config, "tax_rate")},
++            {
++                "key": _LEGACY_TTL_KEY,
++                "value": config.link_ttl_minutes,
++                "description": self._description(config, "link_ttl_minutes"),
++            },
++        ]
++        for key, value in config.extra_settings.items():
++            entries.append({"key": key, "value": value, "description": self._description(config, key)})
++        return entries
++
++    def _entry_from_typed_config(self, config: GlobalConfig, key: str) -> dict[str, ConfigValue | str] | None:
++        normalized_key = _KEY_ALIASES.get(key, key)
++        if normalized_key == "tax_rate":
++            value: ConfigValue = config.tax_rate
++        elif normalized_key == "link_ttl_minutes":
++            value = config.link_ttl_minutes
++        elif normalized_key == "show_product_photos_in_pdf":
++            value = config.show_product_photos_in_pdf
++        else:
++            if normalized_key not in config.extra_settings:
++                return None
++            value = config.extra_settings[normalized_key]
++
++        return {
++            "key": key,
++            "value": value,
++            "description": self._description(config, normalized_key),
++        }
++
++    async def _load_legacy_business_values(self) -> dict[str, ConfigValue]:
++        collection = GlobalConfig.get_motor_collection()
++        docs = await collection.find({"key": {"$in": [_LEGACY_TAX_KEY, _LEGACY_TTL_KEY, "show_product_photos_in_pdf"]}}).to_list(length=20)
++        values: dict[str, ConfigValue] = {}
++        for doc in docs:
++            key = str(doc.get("key", "")).strip()
++            value = doc.get("value")
++            if key == _LEGACY_TAX_KEY:
++                try:
++                    values["tax_rate"] = float(value)
++                except (TypeError, ValueError) as exc:
++                    raise ValueError("Valor inválido para porcentaje_impuesto en datos legacy") from exc
++            elif key == _LEGACY_TTL_KEY:
++                try:
++                    values["link_ttl_minutes"] = int(value)
++                except (TypeError, ValueError) as exc:
++                    raise ValueError("Valor inválido para tiempo_expiracion_link_minutos en datos legacy") from exc
++            elif key == "show_product_photos_in_pdf":
++                values["show_product_photos_in_pdf"] = bool(value)
++        return values
++
++    async def _load_legacy_entries(self) -> list[dict[str, ConfigValue | str]]:
++        collection = GlobalConfig.get_motor_collection()
++        docs = await collection.find({"key": {"$exists": True}}).to_list(length=200)
++        entries: list[dict[str, ConfigValue | str]] = []
++        for doc in docs:
++            key = doc.get("key")
++            if not key:
++                continue
++            entries.append(
++                {
++                    "key": str(key),
++                    "value": doc.get("value"),
++                    "description": str(doc.get("description", "")),
++                }
++            )
++        return entries
++
++    async def _get_legacy_by_key(self, key: str) -> dict[str, ConfigValue | str] | None:
++        collection = GlobalConfig.get_motor_collection()
++        return await collection.find_one({"key": key})
++
++    def _description(self, config: GlobalConfig, key: str) -> str:
++        return config.descriptions.get(key, "")
+diff --git a/app/infrastructure/repositories/product_repo.py b/app/infrastructure/repositories/product_repo.py
+index 0d4e25e..88b0235 100644
+--- a/app/infrastructure/repositories/product_repo.py
++++ b/app/infrastructure/repositories/product_repo.py
+@@ -1,13 +1,22 @@
+ import logging
+ from typing import Any
+ 
++import pymongo
+ from beanie import PydanticObjectId
+ 
+ from app.domain.models.product import Product
++from app.domain.schemas.search import ProductSearchParams, SortBy
+ from app.infrastructure.repositories.base import BaseRepository
+ 
+ logger = logging.getLogger(__name__)
+ 
++SORT_MAP = {
++    SortBy.price_asc: [("cost", pymongo.ASCENDING)],
++    SortBy.price_desc: [("cost", pymongo.DESCENDING)],
++    SortBy.name_asc: [("name", pymongo.ASCENDING)],
++    SortBy.name_desc: [("name", pymongo.DESCENDING)],
++}
++
+ 
+ class ProductRepository(BaseRepository):
+     """Repositorio de productos con soporte upsert por SKU."""
+@@ -52,3 +61,39 @@ class ProductRepository(BaseRepository):
+             logger.info("Producto actualizado por SKU: %s", data["sku"])
+             return existing
+         return await self.create(data)
++
++    async def remove_category_from_all(self, category_id: str) -> None:
++        """Remueve un category_id de todos los productos que lo referencien."""
++        oid = PydanticObjectId(category_id)
++        await Product.find(Product.category_ids == oid).update(
++            {"$pull": {"category_ids": oid}}
++        )
++
++    async def search(self, params: ProductSearchParams, resolved_category_id: str | None = None) -> tuple[list[Product], int]:
++        """Búsqueda avanzada con filtros acumulativos, paginación y ordenamiento."""
++        query: dict[str, Any] = {}
++
++        if params.q:
++            query["$text"] = {"$search": params.q}
++        if params.sku:
++            query["sku"] = params.sku
++
++        cat_id = resolved_category_id or params.category_id
++        if cat_id:
++            query["category_ids"] = PydanticObjectId(cat_id)
++
++        if params.min_price is not None or params.max_price is not None:
++            cost_filter: dict[str, float] = {}
++            if params.min_price is not None:
++                cost_filter["$gte"] = params.min_price
++            if params.max_price is not None:
++                cost_filter["$lte"] = params.max_price
++            query["cost"] = cost_filter
++
++        find_query = Product.find(query)
++        total = await find_query.count()
++
++        sort_spec = SORT_MAP.get(params.sort_by, [("name", pymongo.ASCENDING)])
++        results = await find_query.sort(sort_spec).skip((params.page - 1) * params.limit).limit(params.limit).to_list()
++
++        return results, total
+diff --git a/app/infrastructure/services/excel_service.py b/app/infrastructure/services/excel_service.py
+index 82f2b57..a943e50 100644
+--- a/app/infrastructure/services/excel_service.py
++++ b/app/infrastructure/services/excel_service.py
+@@ -1,4 +1,5 @@
+ import logging
++import re
+ from io import BytesIO
+ 
+ from openpyxl import load_workbook
+@@ -6,13 +7,18 @@ from openpyxl import load_workbook
+ logger = logging.getLogger(__name__)
+ 
+ EXPECTED_COLUMNS = {"nombre", "sku", "costo", "unidad", "moneda"}
++OPTIONAL_COLUMNS = {"colores", "categoría", "categoria", "descripción", "descripcion", "marca"}
+ COLUMN_MAP = {
+     "nombre": "name",
+     "sku": "sku",
+     "costo": "cost",
+     "unidad": "unit",
+     "moneda": "currency",
++    "descripción": "description",
++    "descripcion": "description",
++    "marca": "brand",
+ }
++_HEX_RE = re.compile(r"^#[0-9A-Fa-f]{6}$")
+ 
+ 
+ class ExcelService:
+@@ -32,6 +38,9 @@ class ExcelService:
+         if missing:
+             raise ValueError(f"Columnas faltantes en el Excel: {missing}")
+ 
++        colors_idx = headers.index("colores") if "colores" in headers else None
++        cat_idx = next((headers.index(h) for h in ("categoría", "categoria") if h in headers), None)
++
+         products = []
+         for row in rows[1:]:
+             if not any(row):
+@@ -42,8 +51,29 @@ class ExcelService:
+                     row_dict[COLUMN_MAP[header]] = row[i]
+             if row_dict.get("sku"):
+                 row_dict["cost"] = float(row_dict.get("cost", 0))
++                row_dict.setdefault("description", "")
++                row_dict.setdefault("brand", "")
++                if colors_idx is not None and colors_idx < len(row) and row[colors_idx]:
++                    row_dict["colors"] = self._parse_colors(str(row[colors_idx]))
++                if cat_idx is not None and cat_idx < len(row) and row[cat_idx]:
++                    row_dict["_category_slugs"] = [s.strip() for s in str(row[cat_idx]).split(",") if s.strip()]
+                 products.append(row_dict)
+ 
+         logger.info("Excel parseado: %d productos encontrados", len(products))
+         wb.close()
+         return products
++
++    @staticmethod
++    def _parse_colors(raw: str) -> list[dict]:
++        """Parsea 'Rojo:#FF0000,Azul:#0000FF' a lista de dicts."""
++        colors = []
++        for entry in raw.split(","):
++            entry = entry.strip()
++            if ":" not in entry:
++                continue
++            name, hex_val = entry.rsplit(":", 1)
++            hex_val = hex_val.strip()
++            if not _HEX_RE.match(hex_val):
++                continue
++            colors.append({"name": name.strip(), "hex": hex_val.upper()})
++        return colors[:6]
+diff --git a/docker-compose.yml b/docker-compose.yml
+index 3ad62e7..d53a4c0 100644
+--- a/docker-compose.yml
++++ b/docker-compose.yml
+@@ -8,6 +8,7 @@ services:
+       - .env
+     volumes:
+       - .:/app
++      - ./uploads:/app/uploads
+     depends_on:
+       - mongodb
+     restart: unless-stopped
+diff --git a/main.py b/main.py
+index 55fcb08..33dff7b 100644
+--- a/main.py
++++ b/main.py
+@@ -1,14 +1,19 @@
+ import logging
+ from contextlib import asynccontextmanager
++from pathlib import Path
+ 
+ from fastapi import FastAPI
+ from fastapi.staticfiles import StaticFiles
+ 
+ from app.database import init_db
++from app.api.v1.auth import router as auth_router
++from app.api.v1.budgets import router as budgets_router
++from app.api.v1.categories import router as categories_router
+ from app.api.v1.config import router as config_router
+ from app.api.v1.products import router as products_router
+-from app.api.v1.budgets import router as budgets_router
+-from app.api.dependencies import get_config_use_cases
++from app.api.v1.users import router as users_router
++from app.api.dependencies import get_auth_use_cases, get_config_use_cases
++from settings.config import settings
+ from web.views import router as web_router
+ 
+ logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(name)s | %(levelname)s | %(message)s")
+@@ -18,9 +23,14 @@ logger = logging.getLogger(__name__)
+ @asynccontextmanager
+ async def lifespan(app: FastAPI):
+     await init_db()
+-    # Seed de configuración por defecto
++    # Crear directorios de uploads
++    Path(settings.upload_dir).mkdir(parents=True, exist_ok=True)
++    Path(settings.branding_dir).mkdir(parents=True, exist_ok=True)
++    # Seeds
+     config_uc = get_config_use_cases()
+     await config_uc.seed_defaults()
++    auth_uc = get_auth_use_cases()
++    await auth_uc.seed_superadmin()
+     logger.info("Aplicación iniciada correctamente")
+     yield
+ 
+@@ -28,13 +38,17 @@ async def lifespan(app: FastAPI):
+ app = FastAPI(
+     title="Budget Maker API",
+     description="API de generación de presupuestos/cotizaciones",
+-    version="0.1.0",
++    version="0.2.0",
+     lifespan=lifespan,
+ )
+ 
++app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+ app.mount("/static", StaticFiles(directory="web/static"), name="static")
+ 
++app.include_router(auth_router)
++app.include_router(users_router)
+ app.include_router(config_router)
++app.include_router(categories_router)
+ app.include_router(products_router)
+ app.include_router(budgets_router)
+ app.include_router(web_router)
+diff --git a/requirements.txt b/requirements.txt
+index 055678e..5fbb7b7 100644
+--- a/requirements.txt
++++ b/requirements.txt
+@@ -8,3 +8,10 @@ pydyf==0.11.*
+ jinja2==3.1.*
+ python-multipart==0.0.*
+ pydantic-settings==2.4.*
++python-jose[cryptography]==3.3.*
++passlib[bcrypt]==1.7.*
++bcrypt==4.0.*
++python-slugify
++pytest
++httpx
++pytest-asyncio
+diff --git a/settings/config.py b/settings/config.py
+index 56d53cc..6d68c8d 100644
+--- a/settings/config.py
++++ b/settings/config.py
+@@ -9,6 +9,21 @@ class Settings(BaseSettings):
+     app_host: str = "0.0.0.0"
+     app_port: int = 8000
+ 
++    # JWT
++    jwt_secret_key: str = "change-me-in-production"
++    jwt_algorithm: str = "HS256"
++    jwt_expire_minutes: int = 480
++
++    # Uploads
++    upload_dir: str = "uploads/products"
++    branding_dir: str = "uploads/branding"
++    max_image_size_mb: int = 2
++
++    # Default admin seed
++    default_admin_username: str = "admin"
++    default_admin_password: str = "admin1234"
++    default_admin_email: str = "admin@budgetmaker.local"
++
+     class Config:
+         env_file = ".env"
+         env_file_encoding = "utf-8"
+diff --git a/web/static/styles.css b/web/static/styles.css
+index 0582684..f7a1a2c 100644
+--- a/web/static/styles.css
++++ b/web/static/styles.css
+@@ -185,7 +185,18 @@ h1 {
+ 
+ /* ===== Catálogo ===== */
+ .catalog-header { text-align: center; margin-bottom: 1.5rem; }
+-.catalog-layout { display: grid; grid-template-columns: 1fr 360px; gap: 1.5rem; align-items: start; }
++.search-bar { max-width: 500px; margin: 1rem auto 0; }
++.search-bar input { width: 100%; padding: 0.6rem 1rem; border: 2px solid #dee2e6; border-radius: 6px; font-size: 1rem; transition: border-color .2s; }
++.search-bar input:focus { outline: none; border-color: #3498db; }
++
++.catalog-layout { display: grid; grid-template-columns: 200px 1fr 360px; gap: 1.5rem; align-items: start; }
++.catalog-main { min-width: 0; }
++
++.catalog-filters { background: white; border: 2px solid #e9ecef; border-radius: 8px; padding: 1rem; position: sticky; top: 5rem; }
++.catalog-filters h4 { margin-bottom: 0.75rem; color: #2c3e50; }
++.filter-group { margin-bottom: 0.75rem; }
++.filter-group label { display: block; font-size: 0.8rem; font-weight: 600; color: #555; margin-bottom: 0.25rem; }
++.filter-group select, .filter-group input { width: 100%; padding: 0.4rem; border: 1px solid #ccc; border-radius: 4px; font-size: 0.85rem; }
+ 
+ .catalog-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 1rem; }
+ .product-card {
+@@ -193,7 +204,14 @@ h1 {
+     display: flex; flex-direction: column; justify-content: space-between; transition: border-color .2s;
+ }
+ .product-card.selected { border-color: #3498db; background: #ebf5fb; }
++.product-figure { margin: 0 0 0.5rem; }
++.product-img { width: 100%; height: 140px; object-fit: cover; border-radius: 6px; }
++.product-img-placeholder { width: 100%; height: 140px; background: #f0f0f0; border-radius: 6px; display: flex; align-items: center; justify-content: center; color: #bbb; font-size: 0.8rem; }
++.product-badges { display: flex; flex-wrap: wrap; gap: 0.25rem; margin-bottom: 0.3rem; }
++.badge { font-size: 0.7rem; background: #ebf5fb; color: #2980b9; padding: 0.15rem 0.4rem; border-radius: 3px; }
+ .product-sku { font-size: 0.75rem; color: #95a5a6; text-transform: uppercase; }
++.product-brand { font-size: 0.75rem; color: #7f8c8d; font-weight: 600; display: block; margin-bottom: 0.15rem; }
++.product-description { font-size: 0.8rem; color: #666; margin: 0.15rem 0 0.3rem; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+ .product-card h4 { margin: 0.3rem 0; font-size: 1rem; }
+ .product-price { font-size: 1.1rem; font-weight: 700; color: #27ae60; }
+ .product-unit { font-size: 0.8rem; font-weight: 400; color: #999; }
+@@ -237,6 +255,36 @@ h1 {
+ 
+ @media (max-width: 768px) {
+     .catalog-layout { grid-template-columns: 1fr; }
++    .catalog-filters { position: static; }
+     .budget-panel { position: static; }
+     .form-grid { grid-template-columns: 1fr; }
+ }
++
++/* Login */
++.login-container { display: flex; align-items: center; justify-content: center; min-height: 100vh; background: #f5f5f5; }
++.login-card { background: white; padding: 2.5rem; border-radius: 10px; box-shadow: 0 4px 12px rgba(0,0,0,.12); width: 100%; max-width: 380px; text-align: center; }
++.login-card h1 { color: #2c3e50; margin-bottom: 0.25rem; }
++.login-card .subtitle { margin-bottom: 1.5rem; }
++.login-card .form-group { text-align: left; margin-bottom: 1rem; }
++
++/* Pagination */
++.pagination { display: flex; align-items: center; justify-content: center; gap: 1rem; margin-top: 1.5rem; }
++.pagination span { font-size: 0.9rem; color: #555; }
++
++/* Admin thumbnails */
++.thumb { width: 40px; height: 40px; object-fit: cover; border-radius: 4px; }
++.thumb-empty { color: #ccc; }
++.img-preview { width: 120px; height: 90px; object-fit: cover; border-radius: 6px; margin-bottom: 0.5rem; display: block; }
++
++/* Checkboxes */
++.checkbox-group { display: flex; flex-wrap: wrap; gap: 0.5rem; }
++.checkbox-label { display: flex; align-items: center; gap: 0.3rem; font-size: 0.9rem; cursor: pointer; }
++
++/* Color dots & selectors */
++.color-dot { display: inline-block; width: 18px; height: 18px; border-radius: 50%; border: 2px solid #ddd; cursor: pointer; vertical-align: middle; transition: border-color .2s, box-shadow .2s; }
++.color-dot.selected { border-color: #2c3e50; box-shadow: 0 0 0 2px #3498db; }
++.color-selector { display: flex; gap: 0.35rem; margin-bottom: 0.3rem; flex-wrap: wrap; }
++.color-list { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.5rem; min-height: 28px; }
++.color-chip { display: inline-flex; align-items: center; gap: 0.3rem; background: #f0f0f0; padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.85rem; }
++.color-chip .btn-delete { padding: 0.1rem 0.3rem; font-size: 0.7rem; line-height: 1; }
++.color-add-row { display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap; }
+diff --git a/web/templates/admin.html b/web/templates/admin.html
+deleted file mode 100644
+index 7189bb4..0000000
+--- a/web/templates/admin.html
++++ /dev/null
+@@ -1,260 +0,0 @@
+-{% extends "base.html" %}
+-{% block title %}Admin — Budget Maker{% endblock %}
+-{% block container_class %}wide{% endblock %}
+-{% block content %}
+-<div class="admin-layout">
+-    <div class="admin-tabs">
+-        <button class="tab-btn active" data-tab="products">Productos</button>
+-        <button class="tab-btn" data-tab="config">Configuración</button>
+-        <button class="tab-btn" data-tab="import">Importar Excel</button>
+-    </div>
+-
+-    <!-- Tab: Productos -->
+-    <div id="tab-products" class="tab-content active">
+-        <div class="section-header">
+-            <h2>Gestión de Productos</h2>
+-            <button class="btn btn-primary" onclick="showProductForm()">+ Nuevo Producto</button>
+-        </div>
+-
+-        <div id="product-form" class="form-card hidden">
+-            <h3 id="form-title">Nuevo Producto</h3>
+-            <input type="hidden" id="product-edit-id">
+-            <div class="form-grid">
+-                <div class="form-group">
+-                    <label>Nombre</label>
+-                    <input type="text" id="p-name" placeholder="Nombre del producto">
+-                </div>
+-                <div class="form-group">
+-                    <label>SKU</label>
+-                    <input type="text" id="p-sku" placeholder="SKU-001">
+-                </div>
+-                <div class="form-group">
+-                    <label>Costo</label>
+-                    <input type="number" id="p-cost" step="0.01" placeholder="0.00">
+-                </div>
+-                <div class="form-group">
+-                    <label>Unidad</label>
+-                    <input type="text" id="p-unit" value="unidad">
+-                </div>
+-                <div class="form-group">
+-                    <label>Moneda</label>
+-                    <input type="text" id="p-currency" value="USD">
+-                </div>
+-            </div>
+-            <div class="form-actions">
+-                <button class="btn btn-primary" onclick="saveProduct()">Guardar</button>
+-                <button class="btn btn-secondary" onclick="hideProductForm()">Cancelar</button>
+-            </div>
+-        </div>
+-
+-        <table class="items-table" id="products-table">
+-            <thead>
+-                <tr>
+-                    <th>SKU</th>
+-                    <th>Nombre</th>
+-                    <th>Costo</th>
+-                    <th>Unidad</th>
+-                    <th>Moneda</th>
+-                    <th>Acciones</th>
+-                </tr>
+-            </thead>
+-            <tbody></tbody>
+-        </table>
+-    </div>
+-
+-    <!-- Tab: Configuración -->
+-    <div id="tab-config" class="tab-content">
+-        <h2>Configuración Global</h2>
+-        <div id="config-list" class="config-cards"></div>
+-    </div>
+-
+-    <!-- Tab: Importar -->
+-    <div id="tab-import" class="tab-content">
+-        <h2>Importar Productos desde Excel</h2>
+-        <p class="hint">Sube un archivo <code>.xlsx</code> con columnas: <strong>nombre, sku, costo, unidad, moneda</strong></p>
+-        <div class="upload-area" id="upload-area">
+-            <input type="file" id="excel-file" accept=".xlsx" onchange="handleFileSelect()">
+-            <p>Arrastra un archivo .xlsx o haz clic para seleccionar</p>
+-        </div>
+-        <button class="btn btn-primary" id="import-btn" onclick="importExcel()" disabled>Importar</button>
+-        <div id="import-result" class="hidden"></div>
+-    </div>
+-</div>
+-
+-<div id="toast" class="toast hidden"></div>
+-{% endblock %}
+-
+-{% block scripts %}
+-<script>
+-const API = '/api/v1';
+-
+-// Tabs
+-document.querySelectorAll('.tab-btn').forEach(btn => {
+-    btn.addEventListener('click', () => {
+-        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+-        document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+-        btn.classList.add('active');
+-        document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+-    });
+-});
+-
+-// Toast
+-function toast(msg, type = 'success') {
+-    const t = document.getElementById('toast');
+-    t.textContent = msg;
+-    t.className = 'toast ' + type;
+-    setTimeout(() => t.className = 'toast hidden', 3000);
+-}
+-
+-// === PRODUCTOS ===
+-async function loadProducts() {
+-    const res = await fetch(API + '/products/');
+-    const products = await res.json();
+-    const tbody = document.querySelector('#products-table tbody');
+-    tbody.innerHTML = products.map(p => `
+-        <tr>
+-            <td>${p.sku}</td>
+-            <td>${p.name}</td>
+-            <td>$${p.cost.toFixed(2)}</td>
+-            <td>${p.unit}</td>
+-            <td>${p.currency}</td>
+-            <td class="actions-cell">
+-                <button class="btn-sm btn-edit" onclick="editProduct('${p.id}')">Editar</button>
+-                <button class="btn-sm btn-delete" onclick="deleteProduct('${p.id}')">Eliminar</button>
+-            </td>
+-        </tr>
+-    `).join('');
+-}
+-
+-function showProductForm(product = null) {
+-    document.getElementById('product-form').classList.remove('hidden');
+-    if (product) {
+-        document.getElementById('form-title').textContent = 'Editar Producto';
+-        document.getElementById('product-edit-id').value = product.id;
+-        document.getElementById('p-name').value = product.name;
+-        document.getElementById('p-sku').value = product.sku;
+-        document.getElementById('p-sku').disabled = true;
+-        document.getElementById('p-cost').value = product.cost;
+-        document.getElementById('p-unit').value = product.unit;
+-        document.getElementById('p-currency').value = product.currency;
+-    } else {
+-        document.getElementById('form-title').textContent = 'Nuevo Producto';
+-        document.getElementById('product-edit-id').value = '';
+-        document.getElementById('p-name').value = '';
+-        document.getElementById('p-sku').value = '';
+-        document.getElementById('p-sku').disabled = false;
+-        document.getElementById('p-cost').value = '';
+-        document.getElementById('p-unit').value = 'unidad';
+-        document.getElementById('p-currency').value = 'USD';
+-    }
+-}
+-
+-function hideProductForm() {
+-    document.getElementById('product-form').classList.add('hidden');
+-}
+-
+-async function saveProduct() {
+-    const editId = document.getElementById('product-edit-id').value;
+-    const data = {
+-        name: document.getElementById('p-name').value,
+-        sku: document.getElementById('p-sku').value,
+-        cost: parseFloat(document.getElementById('p-cost').value),
+-        unit: document.getElementById('p-unit').value,
+-        currency: document.getElementById('p-currency').value,
+-    };
+-    let res;
+-    if (editId) {
+-        res = await fetch(API + '/products/' + editId, {
+-            method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data)
+-        });
+-    } else {
+-        res = await fetch(API + '/products/', {
+-            method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data)
+-        });
+-    }
+-    if (res.ok) {
+-        toast(editId ? 'Producto actualizado' : 'Producto creado');
+-        hideProductForm();
+-        loadProducts();
+-    } else {
+-        const err = await res.json();
+-        toast(err.detail || 'Error al guardar', 'error');
+-    }
+-}
+-
+-async function editProduct(id) {
+-    const res = await fetch(API + '/products/' + id);
+-    if (res.ok) showProductForm(await res.json());
+-}
+-
+-async function deleteProduct(id) {
+-    if (!confirm('¿Eliminar este producto?')) return;
+-    const res = await fetch(API + '/products/' + id, { method: 'DELETE' });
+-    if (res.ok) { toast('Producto eliminado'); loadProducts(); }
+-    else toast('Error al eliminar', 'error');
+-}
+-
+-// === CONFIGURACIÓN ===
+-async function loadConfig() {
+-    const res = await fetch(API + '/config/');
+-    const configs = await res.json();
+-    document.getElementById('config-list').innerHTML = configs.map(c => `
+-        <div class="config-card">
+-            <div class="config-info">
+-                <strong>${c.key}</strong>
+-                <span class="config-desc">${c.description}</span>
+-            </div>
+-            <div class="config-edit">
+-                <input type="number" id="cfg-${c.key}" value="${c.value}" step="any">
+-                <button class="btn-sm btn-edit" onclick="updateConfig('${c.key}')">Guardar</button>
+-            </div>
+-        </div>
+-    `).join('');
+-}
+-
+-async function updateConfig(key) {
+-    const value = parseFloat(document.getElementById('cfg-' + key).value);
+-    const res = await fetch(API + '/config/' + key, {
+-        method: 'PUT',
+-        headers: {'Content-Type': 'application/json'},
+-        body: JSON.stringify({ value })
+-    });
+-    if (res.ok) toast('Configuración actualizada');
+-    else toast('Error al actualizar', 'error');
+-}
+-
+-// === IMPORTAR EXCEL ===
+-function handleFileSelect() {
+-    const file = document.getElementById('excel-file').files[0];
+-    document.getElementById('import-btn').disabled = !file;
+-}
+-
+-async function importExcel() {
+-    const file = document.getElementById('excel-file').files[0];
+-    if (!file) return;
+-    const form = new FormData();
+-    form.append('file', file);
+-    document.getElementById('import-btn').disabled = true;
+-    document.getElementById('import-btn').textContent = 'Importando...';
+-    const res = await fetch(API + '/products/import', { method: 'POST', body: form });
+-    const result = await res.json();
+-    document.getElementById('import-btn').textContent = 'Importar';
+-    if (res.ok) {
+-        document.getElementById('import-result').className = 'import-result';
+-        document.getElementById('import-result').innerHTML =
+-            `<strong>Resultado:</strong> ${result.created} creados, ${result.updated} actualizados, ${result.total} total`;
+-        toast('Importación completada');
+-        loadProducts();
+-    } else {
+-        document.getElementById('import-result').className = 'import-result error';
+-        document.getElementById('import-result').textContent = result.detail || 'Error';
+-        toast('Error en importación', 'error');
+-    }
+-    document.getElementById('import-btn').disabled = false;
+-}
+-
+-// Init
+-loadProducts();
+-loadConfig();
+-</script>
+-{% endblock %}
+diff --git a/web/templates/base.html b/web/templates/base.html
+index 51e4d41..9dde1d6 100644
+--- a/web/templates/base.html
++++ b/web/templates/base.html
+@@ -4,19 +4,52 @@
+     <meta charset="UTF-8">
+     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+     <title>{% block title %}Budget Maker{% endblock %}</title>
++    <link rel="icon" id="dynamic-favicon" href="/static/favicon.ico" type="image/x-icon">
+     <link rel="stylesheet" href="/static/styles.css">
+ </head>
+ <body>
++    {% block navbar %}
+     <nav class="navbar">
+-        <a href="/" class="nav-brand">Budget Maker</a>
++        <a href="/" class="nav-brand">
++            <img id="nav-logo" src="" alt="" style="display:none;max-height:36px;margin-right:8px;vertical-align:middle">
++            <span id="nav-brand-text">Budget Maker</span>
++        </a>
+         <div class="nav-links">
+             <a href="/">Catálogo</a>
+-            <a href="/admin">Admin</a>
++            <a href="/admin/login">Admin</a>
+         </div>
+     </nav>
++    {% endblock %}
+     <div class="container {% block container_class %}{% endblock %}">
+         {% block content %}{% endblock %}
+     </div>
++    <div id="toast" class="toast hidden"></div>
++    <script src="/static/js/api.js"></script>
++    <script src="/static/js/auth.js"></script>
++    <script>
++    (async function loadBranding() {
++        try {
++            const res = await fetch('/api/v1/config/');
++            if (!res.ok) return;
++            const configs = await res.json();
++            const map = {};
++            configs.forEach(c => map[c.key] = c.value);
++            if (map.site_title) {
++                const el = document.getElementById('nav-brand-text');
++                if (el) el.textContent = map.site_title;
++                document.title = map.site_title;
++            }
++            if (map.site_logo) {
++                const img = document.getElementById('nav-logo');
++                if (img) { img.src = map.site_logo; img.style.display = 'inline'; }
++            }
++            if (map.site_icon) {
++                const fav = document.getElementById('dynamic-favicon');
++                if (fav) fav.href = map.site_icon;
++            }
++        } catch(e) {}
++    })();
++    </script>
+     {% block scripts %}{% endblock %}
+ </body>
+ </html>
+diff --git a/web/templates/budget_expired.html b/web/templates/budget_expired.html
+deleted file mode 100644
+index e9ff962..0000000
+--- a/web/templates/budget_expired.html
++++ /dev/null
+@@ -1,9 +0,0 @@
+-{% extends "base.html" %}
+-{% block title %}Link Expirado{% endblock %}
+-{% block content %}
+-<div class="expired">
+-    <h1>⏰ Link Expirado</h1>
+-    <p>El enlace para la cotización <strong>{{ code }}</strong> ha expirado.</p>
+-    <p>Solicita un nuevo enlace al vendedor.</p>
+-</div>
+-{% endblock %}
+diff --git a/web/templates/budget_view.html b/web/templates/budget_view.html
+deleted file mode 100644
+index 38ecc08..0000000
+--- a/web/templates/budget_view.html
++++ /dev/null
+@@ -1,50 +0,0 @@
+-{% extends "base.html" %}
+-{% block title %}Cotización {{ budget.code }}{% endblock %}
+-{% block content %}
+-<div class="budget">
+-    <h1>COTIZACIÓN {{ budget.code }}</h1>
+-    <p class="subtitle">BUDGET MAKER</p>
+-
+-    <div class="client-info">
+-        <p><strong>Cliente:</strong> {{ budget.client_info.nombres }} {{ budget.client_info.apellidos }}</p>
+-        <p><strong>Documento:</strong> {{ budget.client_info.documento }}</p>
+-        <p><strong>Dirección:</strong> {{ budget.client_info.direccion }}</p>
+-        <p><strong>Vendedor:</strong> {{ budget.client_info.vendedor }}</p>
+-        <p><strong>Fecha:</strong> {{ budget.created_at.strftime('%d/%m/%Y') }}</p>
+-    </div>
+-
+-    <table class="items-table">
+-        <thead>
+-            <tr>
+-                <th>SKU</th>
+-                <th>Producto</th>
+-                <th>Cant.</th>
+-                <th>P. Unit.</th>
+-                <th>Total</th>
+-            </tr>
+-        </thead>
+-        <tbody>
+-            {% for item in budget.items %}
+-            <tr>
+-                <td>{{ item.sku }}</td>
+-                <td>{{ item.name }}</td>
+-                <td>{{ item.quantity }}</td>
+-                <td>${{ "%.2f"|format(item.unit_cost) }}</td>
+-                <td>${{ "%.2f"|format(item.line_total) }}</td>
+-            </tr>
+-            {% endfor %}
+-        </tbody>
+-    </table>
+-
+-    <div class="totals">
+-        <p>Subtotal: <strong>${{ "%.2f"|format(budget.subtotal) }}</strong></p>
+-        <p>Impuesto ({{ budget.tax_percent }}%): <strong>${{ "%.2f"|format(budget.tax_amount) }}</strong></p>
+-        <p class="grand-total">Total: <strong>${{ "%.2f"|format(budget.total) }}</strong></p>
+-    </div>
+-
+-    <div class="actions">
+-        <a href="/presupuesto/{{ budget.uuid }}/pdf" class="btn btn-pdf">📄 Descargar PDF</a>
+-        <a href="{{ whatsapp_url }}" target="_blank" class="btn btn-whatsapp">💬 Compartir por WhatsApp</a>
+-    </div>
+-</div>
+-{% endblock %}
+diff --git a/web/templates/catalog.html b/web/templates/catalog.html
+deleted file mode 100644
+index c688ea0..0000000
+--- a/web/templates/catalog.html
++++ /dev/null
+@@ -1,299 +0,0 @@
+-{% extends "base.html" %}
+-{% block title %}Catálogo — Budget Maker{% endblock %}
+-{% block container_class %}wide{% endblock %}
+-{% block content %}
+-<div class="catalog-header">
+-    <h1>Catálogo de Productos</h1>
+-    <p class="subtitle">Selecciona productos y crea tu presupuesto</p>
+-</div>
+-
+-<div class="catalog-layout">
+-    <!-- Grilla de productos -->
+-    <div class="catalog-grid" id="catalog-grid">
+-        <div class="loading">Cargando productos...</div>
+-    </div>
+-
+-    <!-- Panel lateral: carrito/presupuesto -->
+-    <div class="budget-panel">
+-        <h3>Presupuesto</h3>
+-        <div id="cart-items" class="cart-items">
+-            <p class="cart-empty">No hay productos seleccionados</p>
+-        </div>
+-        <div id="cart-totals" class="cart-totals hidden">
+-            <div class="cart-line"><span>Subtotal:</span> <strong id="cart-subtotal">$0.00</strong></div>
+-            <div class="cart-line"><span>Impuesto (<span id="cart-tax-pct">0</span>%):</span> <strong id="cart-tax">$0.00</strong></div>
+-            <div class="cart-line total"><span>Total:</span> <strong id="cart-total">$0.00</strong></div>
+-        </div>
+-
+-        <div id="client-form" class="client-form hidden">
+-            <h4>Datos del cliente</h4>
+-            <input type="text" id="c-nombres" placeholder="Nombres *" required>
+-            <input type="text" id="c-apellidos" placeholder="Apellidos *" required>
+-            <input type="text" id="c-documento" placeholder="Documento">
+-            <input type="text" id="c-direccion" placeholder="Dirección">
+-            <input type="text" id="c-vendedor" placeholder="Vendedor">
+-        </div>
+-
+-        <button class="btn btn-primary btn-full" id="btn-create-budget" onclick="createBudget()" disabled>
+-            Crear Presupuesto
+-        </button>
+-    </div>
+-</div>
+-
+-<!-- Modal de presupuesto creado -->
+-<div id="budget-modal" class="modal hidden">
+-    <div class="modal-content modal-wide">
+-        <h2>¡Presupuesto Creado!</h2>
+-
+-        <div class="budget-detail">
+-            <div class="detail-header">
+-                <div><strong>Código:</strong> <span id="modal-code"></span></div>
+-                <div><strong>Fecha:</strong> <span id="modal-date"></span></div>
+-            </div>
+-
+-            <div class="detail-section">
+-                <h4>Datos del Cliente</h4>
+-                <div class="detail-grid">
+-                    <div><strong>Nombre:</strong> <span id="modal-client-name"></span></div>
+-                    <div><strong>Documento:</strong> <span id="modal-client-doc"></span></div>
+-                    <div><strong>Dirección:</strong> <span id="modal-client-dir"></span></div>
+-                    <div><strong>Vendedor:</strong> <span id="modal-client-vendor"></span></div>
+-                </div>
+-            </div>
+-
+-            <div class="detail-section">
+-                <h4>Productos</h4>
+-                <table class="items-table">
+-                    <thead>
+-                        <tr>
+-                            <th>SKU</th>
+-                            <th>Producto</th>
+-                            <th>Cant.</th>
+-                            <th>P. Unit.</th>
+-                            <th>Subtotal</th>
+-                        </tr>
+-                    </thead>
+-                    <tbody id="modal-items"></tbody>
+-                </table>
+-            </div>
+-
+-            <div class="detail-totals">
+-                <div class="cart-line"><span>Subtotal:</span> <strong id="modal-subtotal"></strong></div>
+-                <div class="cart-line"><span>Impuesto (<span id="modal-tax-pct"></span>%):</span> <strong id="modal-tax"></strong></div>
+-                <div class="cart-line total"><span>Total:</span> <strong id="modal-total"></strong></div>
+-            </div>
+-        </div>
+-
+-        <div class="modal-actions">
+-            <a id="modal-link" href="#" target="_blank" class="btn btn-primary">Ver Presupuesto</a>
+-            <a id="modal-pdf" href="#" target="_blank" class="btn btn-pdf">Descargar PDF</a>
+-            <a id="modal-whatsapp" href="#" target="_blank" class="btn btn-whatsapp">Enviar por WhatsApp</a>
+-            <button class="btn btn-secondary" onclick="closeModal()">Cerrar</button>
+-        </div>
+-    </div>
+-</div>
+-
+-<div id="toast" class="toast hidden"></div>
+-{% endblock %}
+-
+-{% block scripts %}
+-<script>
+-const API = '/api/v1';
+-const cart = {};
+-let taxPercent = 18;
+-
+-function toast(msg, type = 'success') {
+-    const t = document.getElementById('toast');
+-    t.textContent = msg;
+-    t.className = 'toast ' + type;
+-    setTimeout(() => t.className = 'toast hidden', 3000);
+-}
+-
+-// Cargar config de impuesto
+-async function loadTax() {
+-    try {
+-        const res = await fetch(API + '/config/porcentaje_impuesto');
+-        if (res.ok) { const c = await res.json(); taxPercent = parseFloat(c.value); }
+-    } catch {}
+-}
+-
+-// Cargar productos en grilla
+-async function loadCatalog() {
+-    const res = await fetch(API + '/products/');
+-    const products = await res.json();
+-    const grid = document.getElementById('catalog-grid');
+-    if (!products.length) {
+-        grid.innerHTML = '<p class="cart-empty">No hay productos. Agrega productos desde <a href="/admin">Admin</a>.</p>';
+-        return;
+-    }
+-    grid.innerHTML = products.map(p => `
+-        <div class="product-card" id="card-${p.sku}">
+-            <div class="product-info">
+-                <span class="product-sku">${p.sku}</span>
+-                <h4>${p.name}</h4>
+-                <p class="product-price">$${p.cost.toFixed(2)} <span class="product-unit">/ ${p.unit}</span></p>
+-            </div>
+-            <div class="product-actions">
+-                <button class="btn-sm btn-minus" onclick="changeQty('${p.sku}', -1)" disabled>−</button>
+-                <span class="qty-display" id="qty-${p.sku}">0</span>
+-                <button class="btn-sm btn-plus" onclick="changeQty('${p.sku}', 1)">+</button>
+-            </div>
+-        </div>
+-    `).join('');
+-    window._products = {};
+-    products.forEach(p => window._products[p.sku] = p);
+-}
+-
+-function changeQty(sku, delta) {
+-    const current = cart[sku] || 0;
+-    const next = Math.max(0, current + delta);
+-    if (next === 0) delete cart[sku];
+-    else cart[sku] = next;
+-
+-    document.getElementById('qty-' + sku).textContent = next;
+-    const card = document.getElementById('card-' + sku);
+-    card.classList.toggle('selected', next > 0);
+-    card.querySelector('.btn-minus').disabled = next === 0;
+-
+-    updateCart();
+-}
+-
+-function updateCart() {
+-    const items = Object.entries(cart);
+-    const cartEl = document.getElementById('cart-items');
+-    const totalsEl = document.getElementById('cart-totals');
+-    const formEl = document.getElementById('client-form');
+-    const btnEl = document.getElementById('btn-create-budget');
+-
+-    if (!items.length) {
+-        cartEl.innerHTML = '<p class="cart-empty">No hay productos seleccionados</p>';
+-        totalsEl.classList.add('hidden');
+-        formEl.classList.add('hidden');
+-        btnEl.disabled = true;
+-        return;
+-    }
+-
+-    let subtotal = 0;
+-    cartEl.innerHTML = items.map(([sku, qty]) => {
+-        const p = window._products[sku];
+-        const line = p.cost * qty;
+-        subtotal += line;
+-        return `<div class="cart-item">
+-            <span>${p.name} × ${qty}</span>
+-            <span>$${line.toFixed(2)}</span>
+-        </div>`;
+-    }).join('');
+-
+-    const taxAmt = subtotal * (taxPercent / 100);
+-    const total = subtotal + taxAmt;
+-
+-    document.getElementById('cart-subtotal').textContent = '$' + subtotal.toFixed(2);
+-    document.getElementById('cart-tax-pct').textContent = taxPercent;
+-    document.getElementById('cart-tax').textContent = '$' + taxAmt.toFixed(2);
+-    document.getElementById('cart-total').textContent = '$' + total.toFixed(2);
+-
+-    totalsEl.classList.remove('hidden');
+-    formEl.classList.remove('hidden');
+-    btnEl.disabled = false;
+-}
+-
+-async function createBudget() {
+-    const nombres = document.getElementById('c-nombres').value.trim();
+-    const apellidos = document.getElementById('c-apellidos').value.trim();
+-    if (!nombres || !apellidos) { toast('Nombres y apellidos son requeridos', 'error'); return; }
+-
+-    const items = Object.entries(cart).map(([sku, qty]) => ({ sku, quantity: qty }));
+-    const body = {
+-        client_info: {
+-            nombres,
+-            apellidos,
+-            documento: document.getElementById('c-documento').value.trim(),
+-            direccion: document.getElementById('c-direccion').value.trim(),
+-            vendedor: document.getElementById('c-vendedor').value.trim(),
+-        },
+-        items,
+-    };
+-
+-    document.getElementById('btn-create-budget').disabled = true;
+-    document.getElementById('btn-create-budget').textContent = 'Creando...';
+-
+-    const res = await fetch(API + '/budgets/', {
+-        method: 'POST',
+-        headers: {'Content-Type': 'application/json'},
+-        body: JSON.stringify(body),
+-    });
+-
+-    document.getElementById('btn-create-budget').textContent = 'Crear Presupuesto';
+-    document.getElementById('btn-create-budget').disabled = false;
+-
+-    if (res.ok) {
+-        const b = await res.json();
+-        // Header
+-        document.getElementById('modal-code').textContent = b.code;
+-        const fecha = new Date(b.created_at);
+-        document.getElementById('modal-date').textContent = fecha.toLocaleDateString('es-PE', { day:'2-digit', month:'2-digit', year:'numeric' });
+-
+-        // Cliente
+-        document.getElementById('modal-client-name').textContent = b.client_info.nombres + ' ' + b.client_info.apellidos;
+-        document.getElementById('modal-client-doc').textContent = b.client_info.documento || '—';
+-        document.getElementById('modal-client-dir').textContent = b.client_info.direccion || '—';
+-        document.getElementById('modal-client-vendor').textContent = b.client_info.vendedor || '—';
+-
+-        // Items
+-        document.getElementById('modal-items').innerHTML = b.items.map(it => `
+-            <tr>
+-                <td>${it.sku}</td>
+-                <td>${it.name}</td>
+-                <td>${it.quantity}</td>
+-                <td>$${it.unit_cost.toFixed(2)}</td>
+-                <td>$${it.line_total.toFixed(2)}</td>
+-            </tr>
+-        `).join('');
+-
+-        // Totals
+-        document.getElementById('modal-subtotal').textContent = '$' + b.subtotal.toFixed(2);
+-        document.getElementById('modal-tax-pct').textContent = b.tax_percent;
+-        document.getElementById('modal-tax').textContent = '$' + b.tax_amount.toFixed(2);
+-        document.getElementById('modal-total').textContent = '$' + b.total.toFixed(2);
+-
+-        // Links
+-        const baseUrl = window.location.origin;
+-        document.getElementById('modal-link').href = baseUrl + '/presupuesto/' + b.uuid;
+-        document.getElementById('modal-pdf').href = baseUrl + '/presupuesto/' + b.uuid + '/pdf';
+-
+-        // WhatsApp
+-        const clientName = (b.client_info.nombres + ' ' + b.client_info.apellidos).trim();
+-        let waLines = [
+-            `*COTIZACIÓN ${b.code}*`,
+-            `Cliente: ${clientName}`,
+-            `Fecha: ${document.getElementById('modal-date').textContent}`,
+-            `*${b.items.length} líneas · ${b.items.reduce((s,i) => s + i.quantity, 0)} unidades*`,
+-            '',
+-        ];
+-        b.items.forEach(it => waLines.push(`• ${it.sku} · ${it.name} · ${it.quantity}x $${it.unit_cost.toFixed(2)}`));
+-        waLines.push('', '*TOTALES:*', `Subtotal: $${b.subtotal.toFixed(2)}`, `Total: $${b.total.toFixed(2)}`);
+-        waLines.push('', `Ver online: ${baseUrl}/presupuesto/${b.uuid}`);
+-        document.getElementById('modal-whatsapp').href = 'https://wa.me/?text=' + encodeURIComponent(waLines.join('\n'));
+-
+-        document.getElementById('budget-modal').classList.remove('hidden');
+-        toast('Presupuesto creado: ' + b.code);
+-    } else {
+-        const err = await res.json();
+-        toast(err.detail || 'Error al crear presupuesto', 'error');
+-    }
+-}
+-
+-function closeModal() {
+-    document.getElementById('budget-modal').classList.add('hidden');
+-    // Reset
+-    Object.keys(cart).forEach(sku => delete cart[sku]);
+-    loadCatalog();
+-    updateCart();
+-    document.querySelectorAll('.client-form input').forEach(i => i.value = '');
+-}
+-
+-// Init
+-loadTax();
+-loadCatalog();
+-</script>
+-{% endblock %}
+diff --git a/web/views.py b/web/views.py
+index 475dd21..8eb9f01 100644
+--- a/web/views.py
++++ b/web/views.py
+@@ -16,12 +16,17 @@ templates = Jinja2Templates(directory="web/templates")
+ 
+ @router.get("/", response_class=HTMLResponse)
+ async def home(request: Request):
+-    return templates.TemplateResponse("catalog.html", {"request": request})
++    return templates.TemplateResponse("public/catalog.html", {"request": request})
++
++
++@router.get("/admin/login", response_class=HTMLResponse)
++async def admin_login(request: Request):
++    return templates.TemplateResponse("admin/login.html", {"request": request})
+ 
+ 
+ @router.get("/admin", response_class=HTMLResponse)
+ async def admin(request: Request):
+-    return templates.TemplateResponse("admin.html", {"request": request})
++    return templates.TemplateResponse("admin/dashboard.html", {"request": request})
+ 
+ 
+ @router.get("/presupuesto/{uuid}", response_class=HTMLResponse)
+@@ -32,10 +37,10 @@ async def view_budget(uuid: str, request: Request, uc: BudgetUseCases = Depends(
+         raise HTTPException(status_code=404, detail="Presupuesto no encontrado")
+ 
+     if await uc.is_expired(budget):
+-        return templates.TemplateResponse("budget_expired.html", {"request": request, "code": budget.code})
++        return templates.TemplateResponse("public/budget_expired.html", {"request": request, "code": budget.code})
+ 
+     whatsapp_url = uc.generate_whatsapp_text(budget)
+-    return templates.TemplateResponse("budget_view.html", {
++    return templates.TemplateResponse("public/budget_view.html", {
+         "request": request,
+         "budget": budget,
+         "whatsapp_url": whatsapp_url,
+@@ -50,7 +55,7 @@ async def download_budget_pdf(uuid: str, request: Request, uc: BudgetUseCases =
+         raise HTTPException(status_code=404, detail="Presupuesto no encontrado")
+ 
+     whatsapp_url = uc.generate_whatsapp_text(budget)
+-    html_content = templates.TemplateResponse("budget_view.html", {
++    html_content = templates.TemplateResponse("public/budget_view.html", {
+         "request": request,
+         "budget": budget,
+         "whatsapp_url": whatsapp_url,
+
+
+===== UNTRACKED FILES =====
+
+.agent/skills/bmad-advanced-elicitation/SKILL.md
+.agent/skills/bmad-advanced-elicitation/assets/methods.csv
+.agent/skills/bmad-advanced-elicitation/customize.toml
+.agent/skills/bmad-advanced-elicitation/scripts/pick_methods.py
+.agent/skills/bmad-advanced-elicitation/scripts/tests/test_pick_methods.py
+.agent/skills/bmad-agent-analyst/SKILL.md
+.agent/skills/bmad-agent-analyst/customize.toml
+.agent/skills/bmad-agent-architect/SKILL.md
+.agent/skills/bmad-agent-architect/customize.toml
+.agent/skills/bmad-agent-dev/SKILL.md
+.agent/skills/bmad-agent-dev/customize.toml
+.agent/skills/bmad-agent-pm/SKILL.md
+.agent/skills/bmad-agent-pm/customize.toml
+.agent/skills/bmad-agent-ux-designer/SKILL.md
+.agent/skills/bmad-agent-ux-designer/customize.toml
+.agent/skills/bmad-architecture/SKILL.md
+.agent/skills/bmad-architecture/assets/spine-template.md
+.agent/skills/bmad-architecture/customize.toml
+.agent/skills/bmad-architecture/references/headless.md
+.agent/skills/bmad-architecture/references/reviewer-gate.md
+.agent/skills/bmad-architecture/scripts/lint_spine.py
+.agent/skills/bmad-architecture/scripts/tests/test_lint_spine.py
+.agent/skills/bmad-brainstorming/SKILL.md
+.agent/skills/bmad-brainstorming/assets/brain-icons.json
+.agent/skills/bmad-brainstorming/assets/brain-methods.csv
+.agent/skills/bmad-brainstorming/assets/brain-selector.html
+.agent/skills/bmad-brainstorming/customize.toml
+.agent/skills/bmad-brainstorming/references/converge.md
+.agent/skills/bmad-brainstorming/references/finalize.md
+.agent/skills/bmad-brainstorming/references/headless.md
+.agent/skills/bmad-brainstorming/references/in-chat-techniques.md
+.agent/skills/bmad-brainstorming/references/mode-autonomous.md
+.agent/skills/bmad-brainstorming/references/mode-facilitator.md
+.agent/skills/bmad-brainstorming/references/mode-partner.md
+.agent/skills/bmad-brainstorming/references/resume.md
+.agent/skills/bmad-brainstorming/scripts/brain.py
+.agent/skills/bmad-brainstorming/scripts/tests/test_brain.py
+.agent/skills/bmad-build-auto/SKILL.md
+.agent/skills/bmad-build-auto/compile-epic-context.md
+.agent/skills/bmad-build-auto/customize.toml
+.agent/skills/bmad-build-auto/references/deletion-check.md
+.agent/skills/bmad-build-auto/review-prompts/edge-case-hunter.md
+.agent/skills/bmad-build-auto/review-prompts/verification-gap.md
+.agent/skills/bmad-build-auto/spec-template.md
+.agent/skills/bmad-build-auto/step-01-clarify-and-route.md
+.agent/skills/bmad-build-auto/step-02-plan.md
+.agent/skills/bmad-build-auto/step-03-implement.md
+.agent/skills/bmad-build-auto/step-04-review.md
+.agent/skills/bmad-build-auto/workflow.md
+.agent/skills/bmad-build/SKILL.md
+.agent/skills/bmad-build/compile-epic-context.md
+.agent/skills/bmad-build/customize.toml
+.agent/skills/bmad-build/references/deletion-check.md
+.agent/skills/bmad-build/review-prompts/edge-case-hunter.md
+.agent/skills/bmad-build/review-prompts/verification-gap.md
+.agent/skills/bmad-build/spec-template.md
+.agent/skills/bmad-build/step-01-clarify-and-route.md
+.agent/skills/bmad-build/step-02-plan.md
+.agent/skills/bmad-build/step-03-implement.md
+.agent/skills/bmad-build/step-04-review.md
+.agent/skills/bmad-build/step-05-present.md
+.agent/skills/bmad-build/step-oneshot.md
+.agent/skills/bmad-build/sync-sprint-status.md
+.agent/skills/bmad-build/workflow.md
+.agent/skills/bmad-checkpoint-preview/SKILL.md
+.agent/skills/bmad-checkpoint-preview/customize.toml
+.agent/skills/bmad-checkpoint-preview/generate-trail.md
+.agent/skills/bmad-checkpoint-preview/step-01-orientation.md
+.agent/skills/bmad-checkpoint-preview/step-02-walkthrough.md
+.agent/skills/bmad-checkpoint-preview/step-03-detail-pass.md
+.agent/skills/bmad-checkpoint-preview/step-04-testing.md
+.agent/skills/bmad-checkpoint-preview/step-05-wrapup.md
+.agent/skills/bmad-code-review/SKILL.md
+.agent/skills/bmad-code-review/customize.toml
+.agent/skills/bmad-code-review/references/deletion-check.md
+.agent/skills/bmad-code-review/review-prompts/edge-case-hunter.md
+.agent/skills/bmad-code-review/review-prompts/verification-gap.md
+.agent/skills/bmad-code-review/steps/step-01-gather-context.md
+.agent/skills/bmad-code-review/steps/step-02-review.md
+.agent/skills/bmad-code-review/steps/step-03-triage.md
+.agent/skills/bmad-code-review/steps/step-04-present.md
+.agent/skills/bmad-correct-course/SKILL.md
+.agent/skills/bmad-correct-course/checklist.md
+.agent/skills/bmad-correct-course/customize.toml
+.agent/skills/bmad-create-architecture/SKILL.md
+.agent/skills/bmad-create-architecture/customize.toml
+.agent/skills/bmad-create-epics-and-stories/SKILL.md
+.agent/skills/bmad-create-epics-and-stories/customize.toml
+.agent/skills/bmad-create-epics-and-stories/steps/step-01-validate-prerequisites.md
+.agent/skills/bmad-create-epics-and-stories/steps/step-02-design-epics.md
+.agent/skills/bmad-create-epics-and-stories/steps/step-03-create-stories.md
+.agent/skills/bmad-create-epics-and-stories/steps/step-04-final-validation.md
+.agent/skills/bmad-create-epics-and-stories/templates/epics-template.md
+.agent/skills/bmad-create-prd/SKILL.md
+.agent/skills/bmad-create-prd/customize.toml
+.agent/skills/bmad-create-story/SKILL.md
+.agent/skills/bmad-create-story/checklist.md
+.agent/skills/bmad-create-story/customize.toml
+.agent/skills/bmad-create-story/discover-inputs.md
+.agent/skills/bmad-create-story/template.md
+.agent/skills/bmad-customize/SKILL.md
+.agent/skills/bmad-customize/scripts/list_customizable_skills.py
+.agent/skills/bmad-customize/scripts/tests/test_list_customizable_skills.py
+.agent/skills/bmad-deep-recon/SKILL.md
+.agent/skills/bmad-deep-recon/assets/research.template.md
+.agent/skills/bmad-deep-recon/customize.toml
+.agent/skills/bmad-deep-recon/references/draft.md
+.agent/skills/bmad-deep-recon/references/finalize.md
+.agent/skills/bmad-deep-recon/references/html-briefing.md
+.agent/skills/bmad-deep-recon/references/lifecycle.md
+.agent/skills/bmad-deep-recon/references/process.md
+.agent/skills/bmad-deep-recon/references/run.md
+.agent/skills/bmad-deep-recon/references/selection.md
+.agent/skills/bmad-deep-recon/references/synthesis.md
+.agent/skills/bmad-deep-recon/references/verification.md
+.agent/skills/bmad-deep-recon/scripts/recon_kit.py
+.agent/skills/bmad-deep-recon/scripts/tests/test_recon_kit.py
+.agent/skills/bmad-deep-recon/types/academic-lit.md
+.agent/skills/bmad-deep-recon/types/competitive.md
+.agent/skills/bmad-deep-recon/types/domain.md
+.agent/skills/bmad-deep-recon/types/market.md
+.agent/skills/bmad-deep-recon/types/technical.md
+.agent/skills/bmad-deep-recon/types/user-voice.md
+.agent/skills/bmad-dev-auto/SKILL.md
+.agent/skills/bmad-dev-story/SKILL.md
+.agent/skills/bmad-dev-story/checklist.md
+.agent/skills/bmad-dev-story/customize.toml
+.agent/skills/bmad-document-project/SKILL.md
+.agent/skills/bmad-domain-research/SKILL.md
+.agent/skills/bmad-edit-prd/SKILL.md
+.agent/skills/bmad-edit-prd/customize.toml
+.agent/skills/bmad-editorial-review-prose/SKILL.md
+.agent/skills/bmad-editorial-review-structure/SKILL.md
+.agent/skills/bmad-editorial-review/SKILL.md
+.agent/skills/bmad-editorial-review/customize.toml
+.agent/skills/bmad-forge-idea/SKILL.md
+.agent/skills/bmad-forge-idea/customize.toml
+.agent/skills/bmad-forge-idea/scripts/resolve_personas.py
+.agent/skills/bmad-forge-idea/scripts/tests/test_resolve_personas.py
+.agent/skills/bmad-generate-project-context/SKILL.md
+.agent/skills/bmad-help/SKILL.md
+.agent/skills/bmad-market-research/SKILL.md
+.agent/skills/bmad-party-mode/SKILL.md
+.agent/skills/bmad-party-mode/customize.toml
+.agent/skills/bmad-party-mode/references/create-party.md
+.agent/skills/bmad-party-mode/references/mode-agent-team.md
+.agent/skills/bmad-party-mode/references/mode-auto.md
+.agent/skills/bmad-party-mode/references/mode-subagent.md
+.agent/skills/bmad-party-mode/references/party-memory.md
+.agent/skills/bmad-party-mode/scripts/resolve_party.py
+.agent/skills/bmad-party-mode/scripts/tests/test_resolve_party.py
+.agent/skills/bmad-prd/SKILL.md
+.agent/skills/bmad-prd/assets/headless-schemas.md
+.agent/skills/bmad-prd/assets/prd-template.md
+.agent/skills/bmad-prd/assets/prd-validation-checklist.md
+.agent/skills/bmad-prd/assets/validation-report-template.html
+.agent/skills/bmad-prd/customize.toml
+.agent/skills/bmad-prd/references/headless.md
+.agent/skills/bmad-prd/references/validate.md
+.agent/skills/bmad-prfaq/SKILL.md
+.agent/skills/bmad-prfaq/agents/artifact-analyzer.md
+.agent/skills/bmad-prfaq/agents/web-researcher.md
+.agent/skills/bmad-prfaq/assets/prfaq-template.md
+.agent/skills/bmad-prfaq/bmad-manifest.json
+.agent/skills/bmad-prfaq/customize.toml
+.agent/skills/bmad-prfaq/references/customer-faq.md
+.agent/skills/bmad-prfaq/references/internal-faq.md
+.agent/skills/bmad-prfaq/references/press-release.md
+.agent/skills/bmad-prfaq/references/verdict.md
+.agent/skills/bmad-product-brief/SKILL.md
+.agent/skills/bmad-product-brief/assets/brief-template.md
+.agent/skills/bmad-product-brief/customize.toml
+.agent/skills/bmad-project-context/SKILL.md
+.agent/skills/bmad-project-context/customize.toml
+.agent/skills/bmad-project-context/references/best-practices.md
+.agent/skills/bmad-project-context/references/template.md
+.agent/skills/bmad-qa-generate-e2e-tests/SKILL.md
+.agent/skills/bmad-qa-generate-e2e-tests/checklist.md
+.agent/skills/bmad-qa-generate-e2e-tests/customize.toml
+.agent/skills/bmad-quick-dev/SKILL.md
+.agent/skills/bmad-retrospective/SKILL.md
+.agent/skills/bmad-retrospective/customize.toml
+.agent/skills/bmad-retrospective/references/acceptance-verdict.md
+.agent/skills/bmad-retrospective/references/aggregate-views.md
+.agent/skills/bmad-retrospective/references/evidence-gathering.md
+.agent/skills/bmad-retrospective/references/retro-document.md
+.agent/skills/bmad-retrospective/references/team-discussion.md
+.agent/skills/bmad-retrospective/scripts/git_evidence.py
+.agent/skills/bmad-retrospective/scripts/sprint_status.py
+.agent/skills/bmad-retrospective/scripts/tests/fixtures/sprint-status-template.yaml
+.agent/skills/bmad-retrospective/scripts/tests/test_git_evidence.py
+.agent/skills/bmad-retrospective/scripts/tests/test_sprint_status.py
+.agent/skills/bmad-review-adversarial-general/SKILL.md
+.agent/skills/bmad-review-edge-case-hunter/SKILL.md
+.agent/skills/bmad-review-verification-gap/SKILL.md
+.agent/skills/bmad-review/SKILL.md
+.agent/skills/bmad-review/customize.toml
+.agent/skills/bmad-review/references/editorial-common.md
+.agent/skills/bmad-review/references/lens-adversarial.md
+.agent/skills/bmad-review/references/lens-edge-case-hunter.md
+.agent/skills/bmad-review/references/lens-prose.md
+.agent/skills/bmad-review/references/lens-structure.md
+.agent/skills/bmad-review/references/lens-verification-gap.md
+.agent/skills/bmad-review/references/structure-models.md
+.agent/skills/bmad-review/scripts/tests/test_word_metrics.py
+.agent/skills/bmad-review/scripts/word_metrics.py
+.agent/skills/bmad-spec/SKILL.md
+.agent/skills/bmad-spec/assets/headless-schemas.md
+.agent/skills/bmad-spec/assets/spec-template.md
+.agent/skills/bmad-spec/assets/stories-schema.md
+.agent/skills/bmad-spec/customize.toml
+.agent/skills/bmad-sprint-planning/SKILL.md
+.agent/skills/bmad-sprint-planning/customize.toml
+.agent/skills/bmad-sprint-planning/references/fix-sprint-status.md
+.agent/skills/bmad-sprint-planning/references/generate-tracking.md
+.agent/skills/bmad-sprint-planning/references/readiness-gate.md
+.agent/skills/bmad-sprint-planning/references/status-view.md
+.agent/skills/bmad-sprint-planning/references/validate.md
+.agent/skills/bmad-sprint-planning/scripts/sprint_plan.py
+.agent/skills/bmad-sprint-planning/scripts/tests/test_sprint_plan.py
+.agent/skills/bmad-sprint-planning/sprint-status-template.yaml
+.agent/skills/bmad-sprint-status/SKILL.md
+.agent/skills/bmad-sprint-status/customize.toml
+.agent/skills/bmad-technical-research/SKILL.md
+.agent/skills/bmad-ux/SKILL.md
+.agent/skills/bmad-ux/assets/color-themes.md
+.agent/skills/bmad-ux/assets/design-directions.md
+.agent/skills/bmad-ux/assets/design-example-editorial.md
+.agent/skills/bmad-ux/assets/design-example-mobile.md
+.agent/skills/bmad-ux/assets/design-example-shadcn.md
+.agent/skills/bmad-ux/assets/excalidraw-wireframe.md
+.agent/skills/bmad-ux/assets/experience-example-mobile.md
+.agent/skills/bmad-ux/assets/experience-example-shadcn.md
+.agent/skills/bmad-ux/assets/headless-schemas.md
+.agent/skills/bmad-ux/assets/key-screens.md
+.agent/skills/bmad-ux/assets/validation-report-template.html
+.agent/skills/bmad-ux/customize.toml
+.agent/skills/bmad-ux/references/creative-tools.md
+.agent/skills/bmad-ux/references/design-md-spec.md
+.agent/skills/bmad-ux/references/headless.md
+.agent/skills/bmad-ux/references/validate.md
+.agent/skills/bmad-validate-prd/SKILL.md
+.agent/skills/bmad-validate-prd/customize.toml
+.agents/changelog.md
+.agents/skills/api-documentation-generator/SKILL.md
+.agents/skills/bmad-advanced-elicitation/SKILL.md
+.agents/skills/bmad-advanced-elicitation/assets/methods.csv
+.agents/skills/bmad-advanced-elicitation/customize.toml
+.agents/skills/bmad-advanced-elicitation/scripts/pick_methods.py
+.agents/skills/bmad-advanced-elicitation/scripts/tests/test_pick_methods.py
+.agents/skills/bmad-agent-analyst/SKILL.md
+.agents/skills/bmad-agent-analyst/customize.toml
+.agents/skills/bmad-agent-architect/SKILL.md
+.agents/skills/bmad-agent-architect/customize.toml
+.agents/skills/bmad-agent-dev/SKILL.md
+.agents/skills/bmad-agent-dev/customize.toml
+.agents/skills/bmad-agent-pm/SKILL.md
+.agents/skills/bmad-agent-pm/customize.toml
+.agents/skills/bmad-agent-ux-designer/SKILL.md
+.agents/skills/bmad-agent-ux-designer/customize.toml
+.agents/skills/bmad-architecture/SKILL.md
+.agents/skills/bmad-architecture/assets/spine-template.md
+.agents/skills/bmad-architecture/customize.toml
+.agents/skills/bmad-architecture/references/headless.md
+.agents/skills/bmad-architecture/references/reviewer-gate.md
+.agents/skills/bmad-architecture/scripts/lint_spine.py
+.agents/skills/bmad-architecture/scripts/tests/test_lint_spine.py
+.agents/skills/bmad-brainstorming/SKILL.md
+.agents/skills/bmad-brainstorming/assets/brain-icons.json
+.agents/skills/bmad-brainstorming/assets/brain-methods.csv
+.agents/skills/bmad-brainstorming/assets/brain-selector.html
+.agents/skills/bmad-brainstorming/customize.toml
+.agents/skills/bmad-brainstorming/references/converge.md
+.agents/skills/bmad-brainstorming/references/finalize.md
+.agents/skills/bmad-brainstorming/references/headless.md
+.agents/skills/bmad-brainstorming/references/in-chat-techniques.md
+.agents/skills/bmad-brainstorming/references/mode-autonomous.md
+.agents/skills/bmad-brainstorming/references/mode-facilitator.md
+.agents/skills/bmad-brainstorming/references/mode-partner.md
+.agents/skills/bmad-brainstorming/references/resume.md
+.agents/skills/bmad-brainstorming/scripts/brain.py
+.agents/skills/bmad-brainstorming/scripts/tests/test_brain.py
+.agents/skills/bmad-build-auto/SKILL.md
+.agents/skills/bmad-build-auto/compile-epic-context.md
+.agents/skills/bmad-build-auto/customize.toml
+.agents/skills/bmad-build-auto/references/deletion-check.md
+.agents/skills/bmad-build-auto/review-prompts/edge-case-hunter.md
+.agents/skills/bmad-build-auto/review-prompts/verification-gap.md
+.agents/skills/bmad-build-auto/spec-template.md
+.agents/skills/bmad-build-auto/step-01-clarify-and-route.md
+.agents/skills/bmad-build-auto/step-02-plan.md
+.agents/skills/bmad-build-auto/step-03-implement.md
+.agents/skills/bmad-build-auto/step-04-review.md
+.agents/skills/bmad-build-auto/workflow.md
+.agents/skills/bmad-build/SKILL.md
+.agents/skills/bmad-build/compile-epic-context.md
+.agents/skills/bmad-build/customize.toml
+.agents/skills/bmad-build/references/deletion-check.md
+.agents/skills/bmad-build/review-prompts/edge-case-hunter.md
+.agents/skills/bmad-build/review-prompts/verification-gap.md
+.agents/skills/bmad-build/spec-template.md
+.agents/skills/bmad-build/step-01-clarify-and-route.md
+.agents/skills/bmad-build/step-02-plan.md
+.agents/skills/bmad-build/step-03-implement.md
+.agents/skills/bmad-build/step-04-review.md
+.agents/skills/bmad-build/step-05-present.md
+.agents/skills/bmad-build/step-oneshot.md
+.agents/skills/bmad-build/sync-sprint-status.md
+.agents/skills/bmad-build/workflow.md
+.agents/skills/bmad-checkpoint-preview/SKILL.md
+.agents/skills/bmad-checkpoint-preview/customize.toml
+.agents/skills/bmad-checkpoint-preview/generate-trail.md
+.agents/skills/bmad-checkpoint-preview/step-01-orientation.md
+.agents/skills/bmad-checkpoint-preview/step-02-walkthrough.md
+.agents/skills/bmad-checkpoint-preview/step-03-detail-pass.md
+.agents/skills/bmad-checkpoint-preview/step-04-testing.md
+.agents/skills/bmad-checkpoint-preview/step-05-wrapup.md
+.agents/skills/bmad-code-review/SKILL.md
+.agents/skills/bmad-code-review/customize.toml
+.agents/skills/bmad-code-review/references/deletion-check.md
+.agents/skills/bmad-code-review/review-prompts/edge-case-hunter.md
+.agents/skills/bmad-code-review/review-prompts/verification-gap.md
+.agents/skills/bmad-code-review/steps/step-01-gather-context.md
+.agents/skills/bmad-code-review/steps/step-02-review.md
+.agents/skills/bmad-code-review/steps/step-03-triage.md
+.agents/skills/bmad-code-review/steps/step-04-present.md
+.agents/skills/bmad-correct-course/SKILL.md
+.agents/skills/bmad-correct-course/checklist.md
+.agents/skills/bmad-correct-course/customize.toml
+.agents/skills/bmad-create-architecture/SKILL.md
+.agents/skills/bmad-create-architecture/customize.toml
+.agents/skills/bmad-create-epics-and-stories/SKILL.md
+.agents/skills/bmad-create-epics-and-stories/customize.toml
+.agents/skills/bmad-create-epics-and-stories/steps/step-01-validate-prerequisites.md
+.agents/skills/bmad-create-epics-and-stories/steps/step-02-design-epics.md
+.agents/skills/bmad-create-epics-and-stories/steps/step-03-create-stories.md
+.agents/skills/bmad-create-epics-and-stories/steps/step-04-final-validation.md
+.agents/skills/bmad-create-epics-and-stories/templates/epics-template.md
+.agents/skills/bmad-create-prd/SKILL.md
+.agents/skills/bmad-create-prd/customize.toml
+.agents/skills/bmad-create-story/SKILL.md
+.agents/skills/bmad-create-story/checklist.md
+.agents/skills/bmad-create-story/customize.toml
+.agents/skills/bmad-create-story/discover-inputs.md
+.agents/skills/bmad-create-story/template.md
+.agents/skills/bmad-customize/SKILL.md
+.agents/skills/bmad-customize/scripts/list_customizable_skills.py
+.agents/skills/bmad-customize/scripts/tests/test_list_customizable_skills.py
+.agents/skills/bmad-deep-recon/SKILL.md
+.agents/skills/bmad-deep-recon/assets/research.template.md
+.agents/skills/bmad-deep-recon/customize.toml
+.agents/skills/bmad-deep-recon/references/draft.md
+.agents/skills/bmad-deep-recon/references/finalize.md
+.agents/skills/bmad-deep-recon/references/html-briefing.md
+.agents/skills/bmad-deep-recon/references/lifecycle.md
+.agents/skills/bmad-deep-recon/references/process.md
+.agents/skills/bmad-deep-recon/references/run.md
+.agents/skills/bmad-deep-recon/references/selection.md
+.agents/skills/bmad-deep-recon/references/synthesis.md
+.agents/skills/bmad-deep-recon/references/verification.md
+.agents/skills/bmad-deep-recon/scripts/recon_kit.py
+.agents/skills/bmad-deep-recon/scripts/tests/test_recon_kit.py
+.agents/skills/bmad-deep-recon/types/academic-lit.md
+.agents/skills/bmad-deep-recon/types/competitive.md
+.agents/skills/bmad-deep-recon/types/domain.md
+.agents/skills/bmad-deep-recon/types/market.md
+.agents/skills/bmad-deep-recon/types/technical.md
+.agents/skills/bmad-deep-recon/types/user-voice.md
+.agents/skills/bmad-dev-auto/SKILL.md
+.agents/skills/bmad-dev-story/SKILL.md
+.agents/skills/bmad-dev-story/checklist.md
+.agents/skills/bmad-dev-story/customize.toml
+.agents/skills/bmad-document-project/SKILL.md
+.agents/skills/bmad-domain-research/SKILL.md
+.agents/skills/bmad-edit-prd/SKILL.md
+.agents/skills/bmad-edit-prd/customize.toml
+.agents/skills/bmad-editorial-review-prose/SKILL.md
+.agents/skills/bmad-editorial-review-structure/SKILL.md
+.agents/skills/bmad-editorial-review/SKILL.md
+.agents/skills/bmad-editorial-review/customize.toml
+.agents/skills/bmad-forge-idea/SKILL.md
+.agents/skills/bmad-forge-idea/customize.toml
+.agents/skills/bmad-forge-idea/scripts/resolve_personas.py
+.agents/skills/bmad-forge-idea/scripts/tests/test_resolve_personas.py
+.agents/skills/bmad-generate-project-context/SKILL.md
+.agents/skills/bmad-help/SKILL.md
+.agents/skills/bmad-market-research/SKILL.md
+.agents/skills/bmad-party-mode/SKILL.md
+.agents/skills/bmad-party-mode/customize.toml
+.agents/skills/bmad-party-mode/references/create-party.md
+.agents/skills/bmad-party-mode/references/mode-agent-team.md
+.agents/skills/bmad-party-mode/references/mode-auto.md
+.agents/skills/bmad-party-mode/references/mode-subagent.md
+.agents/skills/bmad-party-mode/references/party-memory.md
+.agents/skills/bmad-party-mode/scripts/resolve_party.py
+.agents/skills/bmad-party-mode/scripts/tests/test_resolve_party.py
+.agents/skills/bmad-prd/SKILL.md
+.agents/skills/bmad-prd/assets/headless-schemas.md
+.agents/skills/bmad-prd/assets/prd-template.md
+.agents/skills/bmad-prd/assets/prd-validation-checklist.md
+.agents/skills/bmad-prd/assets/validation-report-template.html
+.agents/skills/bmad-prd/customize.toml
+.agents/skills/bmad-prd/references/headless.md
+.agents/skills/bmad-prd/references/validate.md
+.agents/skills/bmad-prfaq/SKILL.md
+.agents/skills/bmad-prfaq/agents/artifact-analyzer.md
+.agents/skills/bmad-prfaq/agents/web-researcher.md
+.agents/skills/bmad-prfaq/assets/prfaq-template.md
+.agents/skills/bmad-prfaq/bmad-manifest.json
+.agents/skills/bmad-prfaq/customize.toml
+.agents/skills/bmad-prfaq/references/customer-faq.md
+.agents/skills/bmad-prfaq/references/internal-faq.md
+.agents/skills/bmad-prfaq/references/press-release.md
+.agents/skills/bmad-prfaq/references/verdict.md
+.agents/skills/bmad-product-brief/SKILL.md
+.agents/skills/bmad-product-brief/assets/brief-template.md
+.agents/skills/bmad-product-brief/customize.toml
+.agents/skills/bmad-project-context/SKILL.md
+.agents/skills/bmad-project-context/customize.toml
+.agents/skills/bmad-project-context/references/best-practices.md
+.agents/skills/bmad-project-context/references/template.md
+.agents/skills/bmad-qa-generate-e2e-tests/SKILL.md
+.agents/skills/bmad-qa-generate-e2e-tests/checklist.md
+.agents/skills/bmad-qa-generate-e2e-tests/customize.toml
+.agents/skills/bmad-quick-dev/SKILL.md
+.agents/skills/bmad-retrospective/SKILL.md
+.agents/skills/bmad-retrospective/customize.toml
+.agents/skills/bmad-retrospective/references/acceptance-verdict.md
+.agents/skills/bmad-retrospective/references/aggregate-views.md
+.agents/skills/bmad-retrospective/references/evidence-gathering.md
+.agents/skills/bmad-retrospective/references/retro-document.md
+.agents/skills/bmad-retrospective/references/team-discussion.md
+.agents/skills/bmad-retrospective/scripts/git_evidence.py
+.agents/skills/bmad-retrospective/scripts/sprint_status.py
+.agents/skills/bmad-retrospective/scripts/tests/fixtures/sprint-status-template.yaml
+.agents/skills/bmad-retrospective/scripts/tests/test_git_evidence.py
+.agents/skills/bmad-retrospective/scripts/tests/test_sprint_status.py
+.agents/skills/bmad-review-adversarial-general/SKILL.md
+.agents/skills/bmad-review-edge-case-hunter/SKILL.md
+.agents/skills/bmad-review-verification-gap/SKILL.md
+.agents/skills/bmad-review/SKILL.md
+.agents/skills/bmad-review/customize.toml
+.agents/skills/bmad-review/references/editorial-common.md
+.agents/skills/bmad-review/references/lens-adversarial.md
+.agents/skills/bmad-review/references/lens-edge-case-hunter.md
+.agents/skills/bmad-review/references/lens-prose.md
+.agents/skills/bmad-review/references/lens-structure.md
+.agents/skills/bmad-review/references/lens-verification-gap.md
+.agents/skills/bmad-review/references/structure-models.md
+.agents/skills/bmad-review/scripts/tests/test_word_metrics.py
+.agents/skills/bmad-review/scripts/word_metrics.py
+.agents/skills/bmad-spec/SKILL.md
+.agents/skills/bmad-spec/assets/headless-schemas.md
+.agents/skills/bmad-spec/assets/spec-template.md
+.agents/skills/bmad-spec/assets/stories-schema.md
+.agents/skills/bmad-spec/customize.toml
+.agents/skills/bmad-sprint-planning/SKILL.md
+.agents/skills/bmad-sprint-planning/customize.toml
+.agents/skills/bmad-sprint-planning/references/fix-sprint-status.md
+.agents/skills/bmad-sprint-planning/references/generate-tracking.md
+.agents/skills/bmad-sprint-planning/references/readiness-gate.md
+.agents/skills/bmad-sprint-planning/references/status-view.md
+.agents/skills/bmad-sprint-planning/references/validate.md
+.agents/skills/bmad-sprint-planning/scripts/sprint_plan.py
+.agents/skills/bmad-sprint-planning/scripts/tests/test_sprint_plan.py
+.agents/skills/bmad-sprint-planning/sprint-status-template.yaml
+.agents/skills/bmad-sprint-status/SKILL.md
+.agents/skills/bmad-sprint-status/customize.toml
+.agents/skills/bmad-technical-research/SKILL.md
+.agents/skills/bmad-ux/SKILL.md
+.agents/skills/bmad-ux/assets/color-themes.md
+.agents/skills/bmad-ux/assets/design-directions.md
+.agents/skills/bmad-ux/assets/design-example-editorial.md
+.agents/skills/bmad-ux/assets/design-example-mobile.md
+.agents/skills/bmad-ux/assets/design-example-shadcn.md
+.agents/skills/bmad-ux/assets/excalidraw-wireframe.md
+.agents/skills/bmad-ux/assets/experience-example-mobile.md
+.agents/skills/bmad-ux/assets/experience-example-shadcn.md
+.agents/skills/bmad-ux/assets/headless-schemas.md
+.agents/skills/bmad-ux/assets/key-screens.md
+.agents/skills/bmad-ux/assets/validation-report-template.html
+.agents/skills/bmad-ux/customize.toml
+.agents/skills/bmad-ux/references/creative-tools.md
+.agents/skills/bmad-ux/references/design-md-spec.md
+.agents/skills/bmad-ux/references/headless.md
+.agents/skills/bmad-ux/references/validate.md
+.agents/skills/bmad-validate-prd/SKILL.md
+.agents/skills/bmad-validate-prd/customize.toml
+.agents/skills/coding-style/SKILL.md
+.agents/skills/documentation-writer/SKILL.md
+.agents/skills/documentation/SKILL.md
+.agents/skills/docx/LICENSE.txt
+.agents/skills/docx/SKILL.md
+.agents/skills/docx/scripts/__init__.py
+.agents/skills/docx/scripts/accept_changes.py
+.agents/skills/docx/scripts/comment.py
+.agents/skills/docx/scripts/office/helpers/__init__.py
+.agents/skills/docx/scripts/office/helpers/merge_runs.py
+.agents/skills/docx/scripts/office/helpers/simplify_redlines.py
+.agents/skills/docx/scripts/office/pack.py
+.agents/skills/docx/scripts/office/schemas/ISO-IEC29500-4_2016/dml-chart.xsd
+.agents/skills/docx/scripts/office/schemas/ISO-IEC29500-4_2016/dml-chartDrawing.xsd
+.agents/skills/docx/scripts/office/schemas/ISO-IEC29500-4_2016/dml-diagram.xsd
+.agents/skills/docx/scripts/office/schemas/ISO-IEC29500-4_2016/dml-lockedCanvas.xsd
+.agents/skills/docx/scripts/office/schemas/ISO-IEC29500-4_2016/dml-main.xsd
+.agents/skills/docx/scripts/office/schemas/ISO-IEC29500-4_2016/dml-picture.xsd
+.agents/skills/docx/scripts/office/schemas/ISO-IEC29500-4_2016/dml-spreadsheetDrawing.xsd
+.agents/skills/docx/scripts/office/schemas/ISO-IEC29500-4_2016/dml-wordprocessingDrawing.xsd
+.agents/skills/docx/scripts/office/schemas/ISO-IEC29500-4_2016/pml.xsd
+.agents/skills/docx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-additionalCharacteristics.xsd
+.agents/skills/docx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-bibliography.xsd
+.agents/skills/docx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-commonSimpleTypes.xsd
+.agents/skills/docx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-customXmlDataProperties.xsd
+.agents/skills/docx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-customXmlSchemaProperties.xsd
+.agents/skills/docx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-documentPropertiesCustom.xsd
+.agents/skills/docx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-documentPropertiesExtended.xsd
+.agents/skills/docx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-documentPropertiesVariantTypes.xsd
+.agents/skills/docx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-math.xsd
+.agents/skills/docx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-relationshipReference.xsd
+.agents/skills/docx/scripts/office/schemas/ISO-IEC29500-4_2016/sml.xsd
+.agents/skills/docx/scripts/office/schemas/ISO-IEC29500-4_2016/vml-main.xsd
+.agents/skills/docx/scripts/office/schemas/ISO-IEC29500-4_2016/vml-officeDrawing.xsd
+.agents/skills/docx/scripts/office/schemas/ISO-IEC29500-4_2016/vml-presentationDrawing.xsd
+.agents/skills/docx/scripts/office/schemas/ISO-IEC29500-4_2016/vml-spreadsheetDrawing.xsd
+.agents/skills/docx/scripts/office/schemas/ISO-IEC29500-4_2016/vml-wordprocessingDrawing.xsd
+.agents/skills/docx/scripts/office/schemas/ISO-IEC29500-4_2016/wml.xsd
+.agents/skills/docx/scripts/office/schemas/ISO-IEC29500-4_2016/xml.xsd
+.agents/skills/docx/scripts/office/schemas/ecma/fouth-edition/opc-contentTypes.xsd
+.agents/skills/docx/scripts/office/schemas/ecma/fouth-edition/opc-coreProperties.xsd
+.agents/skills/docx/scripts/office/schemas/ecma/fouth-edition/opc-digSig.xsd
+.agents/skills/docx/scripts/office/schemas/ecma/fouth-edition/opc-relationships.xsd
+.agents/skills/docx/scripts/office/schemas/mce/mc.xsd
+.agents/skills/docx/scripts/office/schemas/microsoft/wml-2010.xsd
+.agents/skills/docx/scripts/office/schemas/microsoft/wml-2012.xsd
+.agents/skills/docx/scripts/office/schemas/microsoft/wml-2018.xsd
+.agents/skills/docx/scripts/office/schemas/microsoft/wml-cex-2018.xsd
+.agents/skills/docx/scripts/office/schemas/microsoft/wml-cid-2016.xsd
+.agents/skills/docx/scripts/office/schemas/microsoft/wml-sdtdatahash-2020.xsd
+.agents/skills/docx/scripts/office/schemas/microsoft/wml-symex-2015.xsd
+.agents/skills/docx/scripts/office/soffice.py
+.agents/skills/docx/scripts/office/unpack.py
+.agents/skills/docx/scripts/office/validate.py
+.agents/skills/docx/scripts/office/validators/__init__.py
+.agents/skills/docx/scripts/office/validators/base.py
+.agents/skills/docx/scripts/office/validators/docx.py
+.agents/skills/docx/scripts/office/validators/pptx.py
+.agents/skills/docx/scripts/office/validators/redlining.py
+.agents/skills/docx/scripts/templates/comments.xml
+.agents/skills/docx/scripts/templates/commentsExtended.xml
+.agents/skills/docx/scripts/templates/commentsExtensible.xml
+.agents/skills/docx/scripts/templates/commentsIds.xml
+.agents/skills/docx/scripts/templates/people.xml
+.agents/skills/fastapi-endpoint/SKILL.md
+.agents/skills/fastapi-templates/SKILL.md
+.agents/skills/git-commit/SKILL.md
+.agents/skills/github-actions-docs/SKILL.md
+.agents/skills/github-actions-docs/references/topic-map.md
+.agents/skills/pi-acr-manager/SKILL.md
+.agents/skills/project-architecture/SKILL.md
+.agents/skills/senior-architect/SKILL.md
+.agents/skills/senior-architect/references/architecture_patterns.md
+.agents/skills/senior-architect/references/system_design_workflows.md
+.agents/skills/senior-architect/references/tech_decision_guide.md
+.agents/skills/senior-architect/scripts/architecture_diagram_generator.py
+.agents/skills/senior-architect/scripts/dependency_analyzer.py
+.agents/skills/senior-architect/scripts/project_architect.py
+.agents/skills/senior-backend/SKILL.md
+.agents/skills/senior-backend/references/api_design_patterns.md
+.agents/skills/senior-backend/references/backend_security_practices.md
+.agents/skills/senior-backend/references/database_optimization_guide.md
+.agents/skills/senior-backend/scripts/api_load_tester.py
+.agents/skills/senior-backend/scripts/api_scaffolder.py
+.agents/skills/senior-backend/scripts/database_migration_tool.py
+.agents/skills/skill-creator/LICENSE.txt
+.agents/skills/skill-creator/SKILL.md
+.agents/skills/skill-creator/agents/analyzer.md
+.agents/skills/skill-creator/agents/comparator.md
+.agents/skills/skill-creator/agents/grader.md
+.agents/skills/skill-creator/assets/eval_review.html
+.agents/skills/skill-creator/eval-viewer/generate_review.py
+.agents/skills/skill-creator/eval-viewer/viewer.html
+.agents/skills/skill-creator/references/schemas.md
+.agents/skills/skill-creator/scripts/__init__.py
+.agents/skills/skill-creator/scripts/aggregate_benchmark.py
+.agents/skills/skill-creator/scripts/generate_report.py
+.agents/skills/skill-creator/scripts/improve_description.py
+.agents/skills/skill-creator/scripts/package_skill.py
+.agents/skills/skill-creator/scripts/quick_validate.py
+.agents/skills/skill-creator/scripts/run_eval.py
+.agents/skills/skill-creator/scripts/run_loop.py
+.agents/skills/skill-creator/scripts/utils.py
+.github/agents/bmad-agent-analyst.agent.md
+.github/agents/bmad-agent-architect.agent.md
+.github/agents/bmad-agent-dev.agent.md
+.github/agents/bmad-agent-pm.agent.md
+.github/agents/bmad-agent-ux-designer.agent.md
+.gitignore
+AGENTS.md
+Catalogo Productos Smart 2.xlsx
+Catalogo Productos Smart.xlsx
+Promocionales 2026-comprimido.pdf
+_bmad-output/implementation-artifacts/epic-1-context.md
+_bmad-output/implementation-artifacts/review-diff-from-fd45c06.patch
+_bmad-output/implementation-artifacts/spec-1-1-configuracion-global-tipada-del-negocio.md
+_bmad-output/implementation-artifacts/sprint-status.yaml
+_bmad-output/planning-artifacts/architecture/architecture-budget_maker-2026-08-26/.memlog.md
+_bmad-output/planning-artifacts/architecture/architecture-budget_maker-2026-08-26/ARCHITECTURE-SPINE.md
+_bmad-output/planning-artifacts/architecture/architecture-budget_maker-2026-08-26/solution-design.html
+_bmad-output/planning-artifacts/epics.md
+_bmad-output/planning-artifacts/prds/prd-budget_maker-2026-08-25/.memlog.md
+_bmad-output/planning-artifacts/prds/prd-budget_maker-2026-08-25/prd.md
+_bmad-output/planning-artifacts/prds/prd-budget_maker-2026-08-25/review-rubric.md
+_bmad/_config/bmad-help.csv
+_bmad/_config/files-manifest.csv
+_bmad/_config/manifest.yaml
+_bmad/_config/skill-manifest.csv
+_bmad/bmm/config.yaml
+_bmad/bmm/module-help.csv
+_bmad/bmm/v6-shims/README.md
+_bmad/config.toml
+_bmad/config.user.toml
+_bmad/core/config.yaml
+_bmad/core/module-help.csv
+_bmad/core/v6-shims/README.md
+_bmad/custom/.gitignore
+_bmad/custom/config.toml
+_bmad/render/.gitignore
+_bmad/scripts/config_utils.py
+_bmad/scripts/memlog.py
+_bmad/scripts/render_skill.py
+_bmad/scripts/resolve_config.py
+_bmad/scripts/resolve_customization.py
+app/api/v1/auth.py
+app/api/v1/categories.py
+app/api/v1/users.py
+app/application/use_cases/auth_use_cases.py
+app/application/use_cases/category_use_cases.py
+app/application/use_cases/user_use_cases.py
+app/domain/models/category.py
+app/domain/models/user.py
+app/domain/schemas/category.py
+app/domain/schemas/search.py
+app/domain/schemas/user.py
+app/infrastructure/repositories/category_repo.py
+app/infrastructure/repositories/user_repo.py
+app/infrastructure/services/auth_service.py
+app/infrastructure/services/image_service.py
+tests/__init__.py
+tests/conftest.py
+tests/test_auth.py
+tests/test_budgets.py
+tests/test_categories.py
+tests/test_config.py
+tests/test_products.py
+tests/test_search.py
+uploads/branding/site_icon.png
+uploads/branding/site_logo.png
+uploads/products/6a8113cd790c2ff2a49fb2dc_121092a1.jpg
+uploads/products/6a8113cd790c2ff2a49fb2f9_d8bccee5.jpg
+uploads/products/6a8113cd790c2ff2a49fb2fc_2f81fd36.jpg
+uploads/products/6a8113cd790c2ff2a49fb304_aabe4dcf.webp
+uploads/products/6a8877ed896ec807e57edba0_aacfd4f7.png
+uploads/products/6a8877ed896ec807e57edba1_fe686438.png
+uploads/products/6a8877ed896ec807e57edba2_fe5399b1.png
+uploads/products/6a8877ed896ec807e57edba3_81a7f470.png
+uploads/products/6a8877ed896ec807e57edba5_0b09ff0b.png
+uploads/products/6a8877ed896ec807e57edba7_8d544adb.png
+uploads/products/6a8877ed896ec807e57edba8_f80ab140.png
+uploads/products/6a8877ed896ec807e57edbac_59ab7b37.png
+uploads/products/6a8877ed896ec807e57edbad_af38cf09.png
+uploads/products/6a8877ed896ec807e57edbb6_ede12329.png
+uploads/products/6a8877ed896ec807e57edbb8_d6369cda.png
+uploads/products/6a8877ed896ec807e57edbb9_732b5fb2.png
+uploads/products/6a8877ed896ec807e57edbba_df07e8d8.png
+uploads/products/6a8877ed896ec807e57edbbc_08d6eb2d.png
+uploads/products/6a8877ed896ec807e57edbbf_97567874.png
+web/static/js/admin.js
+web/static/js/api.js
+web/static/js/auth.js
+web/static/js/catalog.js
+web/templates/admin/dashboard.html
+web/templates/admin/login.html
+web/templates/public/budget_expired.html
+web/templates/public/budget_view.html
+web/templates/public/catalog.html

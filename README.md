@@ -1,139 +1,373 @@
 # Budget Maker
 
-Aplicación web para generación de presupuestos/cotizaciones de productos. Prueba de Concepto (POC).
+Sistema web de generación de presupuestos/cotizaciones con autenticación JWT, catálogo de productos con búsqueda e imágenes, categorías M2M y exportación PDF/WhatsApp.
 
-## Stack
+## Stack Tecnológico
 
-- **Backend:** Python 3.11+, FastAPI (async)
-- **Base de Datos:** MongoDB 7 (Beanie ODM + Motor async)
-- **Cliente DB:** mongo-express (puerto 8081)
-- **Frontend:** Jinja2 Templates + CSS responsive (SPA-like con fetch API)
-- **PDF:** WeasyPrint 62 + pydyf 0.11
-- **Excel:** openpyxl (importación/exportación)
-- **Contenedores:** Docker + docker-compose
-
-## Setup
-
-```bash
-docker-compose up --build
-```
-
-Servicios disponibles:
-- API: http://localhost:8000
-- Swagger UI: http://localhost:8000/docs
-- mongo-express: http://localhost:8081
+| Capa | Tecnología |
+|------|-----------|
+| Backend | Python 3.11+, FastAPI 0.115.x (async) |
+| Base de Datos | MongoDB 7 (Beanie ODM + Motor) |
+| Autenticación | JWT HS256 (python-jose + passlib bcrypt) |
+| Frontend | Jinja2 Templates + Vanilla JS (sin build step) |
+| PDF | WeasyPrint 62 + pydyf 0.11 |
+| Excel | openpyxl (importación masiva) |
+| Tests | pytest + httpx + pytest-asyncio |
+| Contenedores | Docker + docker-compose |
 
 ## Arquitectura
 
 ```
 budget_maker/
-├── main.py                     # Entry point
-├── settings/config.py          # Configuración (.env)
+├── main.py                          # Entry point, lifespan, routers
+├── settings/config.py               # Configuración (.env / pydantic-settings)
 ├── app/
-│   ├── database.py             # Conexión MongoDB
-│   ├── domain/models/          # Documentos Beanie
-│   ├── domain/schemas/         # Pydantic v2 schemas
+│   ├── database.py                  # Conexión MongoDB + init Beanie
+│   ├── domain/
+│   │   ├── models/                  # Documentos Beanie (Product, Budget, User, Category, GlobalConfig)
+│   │   └── schemas/                 # Pydantic v2 request/response
 │   ├── infrastructure/
-│   │   ├── repositories/       # Acceso a datos
-│   │   └── services/           # PDF, Excel
-│   ├── application/use_cases/  # Lógica de negocio
-│   └── api/v1/                 # Routers REST
+│   │   ├── repositories/            # Acceso a datos (CRUD async)
+│   │   └── services/               # PDF, Excel, Auth, Image
+│   ├── application/use_cases/       # Lógica de negocio
+│   └── api/
+│       ├── dependencies.py          # DI, OAuth2, get_current_user
+│       └── v1/                      # Routers REST (auth, users, config, categories, products, budgets)
 ├── web/
-│   ├── views.py                # Rutas Jinja2
-│   ├── templates/              # HTML
-│   └── static/                 # CSS
+│   ├── views.py                     # Rutas Jinja2 (catálogo, admin, presupuestos)
+│   ├── templates/
+│   │   ├── base.html                # Layout con navbar adaptativo
+│   │   ├── public/                  # catalog, budget_view, budget_expired
+│   │   └── admin/                   # login, dashboard
+│   └── static/
+│       ├── styles.css               # Estilos responsivos
+│       └── js/                      # Módulos JS (api, auth, catalog, admin)
+├── tests/                           # Tests E2E (pytest + httpx)
+├── uploads/products/                # Imágenes de productos (montado como volumen)
+├── Dockerfile
 └── docker-compose.yml
 ```
 
-**Principios:** Clean Architecture, POO, DRY, SOLID.
+**Principios:** Clean Architecture, DI, async everywhere, SOLID.
 
-## Endpoints
+## Despliegue
 
-### Configuración Global
-| Método | Ruta | Descripción |
-|--------|------|-------------|
-| GET | `/api/v1/config/` | Listar toda la configuración |
-| GET | `/api/v1/config/{key}` | Obtener config por clave |
-| PUT | `/api/v1/config/{key}` | Actualizar config |
+### Requisitos
+- Docker + Docker Compose
+
+### Iniciar
+
+```bash
+docker-compose up --build
+```
+
+### Servicios
+
+| Servicio | URL |
+|----------|-----|
+| Aplicación | http://localhost:8000 |
+| Swagger UI | http://localhost:8000/docs |
+| mongo-express | http://localhost:8081 |
+
+### Variables de Entorno
+
+| Variable | Default | Descripción |
+|----------|---------|-------------|
+| `MONGO_URI` | `mongodb://mongodb:27017` | URI de MongoDB |
+| `MONGO_DB_NAME` | `budget_maker` | Nombre de la BD |
+| `JWT_SECRET_KEY` | `change-me-in-production` | Secreto JWT (cambiar en producción) |
+| `JWT_ALGORITHM` | `HS256` | Algoritmo JWT |
+| `JWT_EXPIRE_MINUTES` | `480` | Expiración del token (8h) |
+| `UPLOAD_DIR` | `uploads/products` | Directorio de imágenes |
+
+### Datos Iniciales (Seeds)
+
+Al iniciar, la app crea automáticamente:
+- **Superadmin:** usuario `admin` / contraseña `admin1234`
+- **Configuración global tipada:** `tax_rate` (18), `link_ttl_minutes` (30), `show_product_photos_in_pdf` (`true`)
+- **Configuración auxiliar:** `site_title`, `site_subtitle`
+
+## Referencia API
+
+### Autenticación
+| Método | Ruta | Auth | Descripción |
+|--------|------|------|-------------|
+| POST | `/api/v1/auth/login` | — | Login → JWT token |
+| GET | `/api/v1/auth/me` | Bearer | Datos del usuario actual |
+
+### Usuarios
+| Método | Ruta | Auth | Descripción |
+|--------|------|------|-------------|
+| GET | `/api/v1/users/` | Bearer | Listar usuarios |
+| POST | `/api/v1/users/` | Bearer | Crear usuario |
+| DELETE | `/api/v1/users/{id}` | Bearer | Eliminar usuario |
+
+### Categorías
+| Método | Ruta | Auth | Descripción |
+|--------|------|------|-------------|
+| GET | `/api/v1/categories/` | — | Listar categorías (`?active_only=true`) |
+| GET | `/api/v1/categories/{id}` | — | Obtener categoría |
+| POST | `/api/v1/categories/` | Bearer | Crear categoría (slug auto) |
+| PUT | `/api/v1/categories/{id}` | Bearer | Actualizar categoría |
+| DELETE | `/api/v1/categories/{id}` | Bearer | Eliminar categoría |
 
 ### Productos
-| Método | Ruta | Descripción |
-|--------|------|-------------|
-| GET | `/api/v1/products/` | Listar productos |
-| GET | `/api/v1/products/{id}` | Obtener producto |
-| POST | `/api/v1/products/` | Crear producto |
-| PUT | `/api/v1/products/{id}` | Actualizar producto |
-| DELETE | `/api/v1/products/{id}` | Eliminar producto |
-| POST | `/api/v1/products/import` | Importar desde Excel (.xlsx) |
+| Método | Ruta | Auth | Descripción |
+|--------|------|------|-------------|
+| GET | `/api/v1/products/` | — | Listar todos los productos (sin filtros) |
+| GET | `/api/v1/products/{id}` | — | Obtener producto (con categorías y colores) |
+| GET | `/api/v1/products/search` | — | Búsqueda y filtrado de productos (ver parámetros abajo) |
+| POST | `/api/v1/products/` | ****** Crear producto (acepta `colors`, `description`, `brand`, `tags`, `category_ids`; retorna 422 si algún category_id es inválido) |
+| PUT | `/api/v1/products/{id}` | ****** Actualizar producto (acepta `colors`, `description`, `brand`, `tags`, `category_ids`; retorna 422 si algún category_id es inválido) |
+| DELETE | `/api/v1/products/{id}` | Bearer | Eliminar producto |
+| PUT | `/api/v1/products/{id}/colors` | Bearer | Gestionar colores del producto (máx 6) |
+| POST | `/api/v1/products/{id}/image` | ****** Subir una imagen (PNG/JPEG/WebP, max 2MB, hasta 10 por producto) |
+| DELETE | `/api/v1/products/{id}/images/{filename}` | ****** Eliminar una imagen especifica |
+| POST | `/api/v1/products/import` | Bearer | Importar desde Excel (.xlsx) |
+
+#### Búsqueda y filtrado — `GET /api/v1/products/search`
+
+Todos los parámetros son opcionales y combinables (filtros acumulativos AND).
+
+| Parámetro | Tipo | Descripción |
+|-----------|------|-------------|
+| `q` | string | Búsqueda parcial por subcadena (case-insensitive) en nombre, SKU y tags |
+| `sku` | string | Filtro exacto por código SKU |
+| `category_id` | string | Filtro por ObjectId de categoría; retorna 422 si el valor no es un ObjectId válido |
+| `category_slug` | string | Filtro por slug de categoría (se resuelve internamente a `category_id`) |
+| `tags` | list[string] | Filtro por tags con lógica OR (ejemplo: `?tags=metal&tags=madera`) |
+| `min_price` | float | Precio mínimo (inclusive) |
+| `max_price` | float | Precio máximo (inclusive) |
+| `page` | int | Página (default: 1, mínimo: 1) |
+| `limit` | int | Resultados por página (default: 20, rango: 1-100) |
+| `sort_by` | enum | Ordenamiento: `name_asc`, `name_desc`, `price_asc`, `price_desc` (default: `name_asc`) |
+
+**Ejemplos:**
+```
+# Solo categoría
+GET /api/v1/products/search?category_slug=pisos
+
+# Texto + categoría + rango de precios
+GET /api/v1/products/search?q=porcelanato&category_slug=pisos&min_price=10&max_price=50
+
+# Solo rango de precios, ordenado por precio
+GET /api/v1/products/search?min_price=5&max_price=100&sort_by=price_asc
+
+# Paginado
+GET /api/v1/products/search?page=2&limit=12
+
+# Filtrar por tags (OR)
+GET /api/v1/products/search?tags=metal&tags=madera
+
+# Búsqueda parcial + filtro por tags (AND)
+GET /api/v1/products/search?q=tornillo&tags=metal
+```
+
+**Respuesta:** `PaginatedResponse<ProductResponse>`
+```json
+{
+  "items": [ ... ],
+  "total": 45,
+  "page": 1,
+  "limit": 12,
+  "pages": 4
+}
+```
+
+Si envías `category_ids` inválidos al crear o actualizar productos, o un `category_id` malformado en búsqueda, la API responde `422` en lugar de propagar un error interno.
 
 ### Presupuestos
-| Método | Ruta | Descripción |
-|--------|------|-------------|
-| GET | `/api/v1/budgets/` | Listar presupuestos |
-| POST | `/api/v1/budgets/` | Crear presupuesto |
-| GET | `/api/v1/budgets/{uuid}` | Obtener presupuesto |
+| Método | Ruta | Auth | Descripción |
+|--------|------|------|-------------|
+| GET | `/api/v1/budgets/` | — | Listar presupuestos |
+| POST | `/api/v1/budgets/` | Bearer | Crear presupuesto con `client_info.email` y `payment_method` opcional validado contra métodos activos |
+| GET | `/api/v1/budgets/{uuid}` | — | Obtener presupuesto por UUID4 (422 si UUID inválido, 410 si expiró) |
+| GET | `/api/v1/budgets/{uuid}/pdf` | No | Descargar PDF (422 UUID inválido, 404 si no existe, 410 si expira) |
+| GET | `/api/v1/budgets/{uuid}/whatsapp-share` | — | Obtener enlace canónico `wa.me` (422 UUID inválido, 404/410 según vigencia) |
+
+Ejemplo de payload `POST /api/v1/budgets/`:
+
+```json
+{
+  "client_info": {
+    "nombres": "Cliente Demo",
+    "telefono": "3001234567",
+    "direccion": "Calle 1 #2-3",
+    "documento": "12345678",
+    "email": "cliente@test.com"
+  },
+  "payment_method": "Transferencia",
+  "items": [
+    {
+      "sku": "BGT-001",
+      "quantity": 1
+    }
+  ]
+}
+```
+
+`payment_method` se valida solo al crear el presupuesto. Si no está en la lista activa de configuración global, la API responde `422`. Si se omite, el presupuesto se crea con `payment_method: null` para mantener compatibilidad.
+
+Ejemplo de respuesta `GET /api/v1/budgets/{uuid}/whatsapp-share`:
+
+```json
+{
+  "whatsapp_url": "https://wa.me/?text=Empresa%3A%20Mi%20Empresa%0AC%C3%B3digo%3A%20BM-20260828-AB12%0ATotal%3A%20%24123.45%0ALink%3A%20http%3A%2F%2Flocalhost%3A8000%2Fpresupuesto%2F550e8400-e29b-41d4-a716-446655440000"
+}
+```
+
+### Configuración Global
+| Método | Ruta | Auth | Descripción |
+|--------|------|------|-------------|
+| GET | `/api/v1/config/` | — | Listar configuración |
+| GET | `/api/v1/config/global` | — | Obtener configuración global tipada |
+| PUT | `/api/v1/config/global` | Requerida | Actualizar configuración global tipada |
+| GET | `/api/v1/config/payment-methods` | — | Listar métodos de pago dinámicos |
+| POST | `/api/v1/config/payment-methods` | Requerida | Agregar método de pago dinámico |
+| DELETE | `/api/v1/config/payment-methods/{method_name}` | Requerida | Eliminar método de pago dinámico |
+| POST | `/api/v1/config/logo` | Requerida | Subir logo explícito (solo PNG/JPG) |
+| GET | `/api/v1/config/{key}` | — | Obtener config por clave |
+| PUT | `/api/v1/config/{key}` | Requerida | Actualizar config |
+| POST | `/api/v1/config/branding/{key}` | Requerida | Subir branding legacy (`site_logo`, `site_icon`) |
+| DELETE | `/api/v1/config/branding/{key}` | Requerida | Eliminar logo o icono |
 
 ### Frontend Web
-| Método | Ruta | Descripción |
-|--------|------|-------------|
-| GET | `/` | Catálogo de productos + creación de presupuestos |
-| GET | `/admin` | Panel admin (CRUD productos, config, import Excel) |
-| GET | `/presupuesto/{uuid}` | Vista HTML del presupuesto (link temporal) |
-| GET | `/presupuesto/{uuid}/pdf` | Descargar presupuesto como PDF |
+| Ruta | Descripción |
+|------|-------------|
+| `/` | Catálogo público con búsqueda, filtros y carrito |
+| `/admin/login` | Login de administrador |
+| `/admin` | Dashboard admin (productos, categorías, usuarios, config, import) |
+| `/presupuesto/{uuid}` | Vista HTML del presupuesto (link con expiración) |
+| `/presupuesto/{uuid}/pdf` | Descarga PDF del presupuesto (retorna 410 si expira) |
 
-## POC Frontend
+## Manual Funcional
+
+### Login (`/admin/login`)
+1. Ingresar con `admin` / `admin1234` (o credenciales creadas)
+2. El token JWT se guarda en localStorage (8h de duración)
+3. Todas las rutas admin verifican autenticación automáticamente
 
 ### Catálogo (`/`)
-- Grid de productos con buscador y filtros
-- Panel lateral para armar presupuesto (seleccionar productos + cantidades)
-- Formulario de datos del cliente (nombre, empresa, teléfono)
-- Modal de confirmación con detalle completo del presupuesto generado
-- Acciones post-creación: **Ver presupuesto**, **Descargar PDF**, **Enviar por WhatsApp**
+- **Búsqueda:** barra con debounce (300ms) que busca en MongoDB text index
+- **Filtros laterales:** categoría, rango de precios, ordenamiento
+- **Tarjetas:** imagen, badges de categoría, selector de colores, marca, descripción, SKU, precio, controles de cantidad
+- **Carrito lateral:** subtotal, impuesto, total, formulario de cliente (color seleccionado visible)
+- **Presupuesto:** modal con detalle completo + acciones (ver, PDF, WhatsApp)
 
-### Admin (`/admin`)
-- **Tab Productos:** CRUD completo (crear, editar, eliminar)
-- **Tab Configuración:** Editar porcentaje de impuesto y tiempo de expiración
-- **Tab Importar:** Carga masiva de productos desde archivo Excel (.xlsx)
+### Dashboard Admin (`/admin`)
+- **Productos:** CRUD con imagenes (hasta 10), tags normalizados, descripcion, marca, selector de categorias, gestion de colores (hasta 6), thumbnail en tabla
+- **Categorías:** CRUD con slug auto-generado
+- **Usuarios:** Crear/eliminar administradores
+- **Configuración:** Editar impuesto, expiración de links, título, subtítulo, logo e icono del sitio
+- **Importar:** Carga masiva desde Excel (.xlsx)
 
-## Flujo de Uso
+## Tests
 
-1. **Configurar** — Los valores de impuesto y expiración se crean automáticamente al iniciar
-2. **Agregar productos** — Vía CRUD individual o importación Excel masiva desde `/admin`
-3. **Crear presupuesto** — Desde el catálogo (`/`): seleccionar productos, llenar datos del cliente, confirmar
-4. **Compartir** — Desde el modal de confirmación:
-   - **Link temporal** — Vista HTML con expiración configurable
-   - **PDF** — Descarga directa del presupuesto
-   - **WhatsApp** — Mensaje pre-armado con resumen y link
+```bash
+# Instalar dependencias de test
+pip install pytest httpx pytest-asyncio
+
+# Ejecutar tests (requiere MongoDB en localhost:27017)
+pytest tests/ -v
+```
+
+Los tests usan una BD separada (`budget_maker_test`) que se elimina al finalizar.
 
 ## Notas Técnicas
 
-- Los links de presupuesto expiran según `tiempo_expiracion_link_minutos` (default: 30 min)
-- MongoDB almacena `created_at` como datetime naive (sin timezone); el sistema normaliza a UTC antes de comparar
-- WeasyPrint requiere `pydyf==0.11.*` (la versión 0.12+ tiene incompatibilidad con WeasyPrint 62)
-- El Dockerfile incluye las dependencias del sistema necesarias para WeasyPrint (libpango, libcairo, etc.)
+- Los links de presupuesto toman el TTL vigente al momento de creación (`link_ttl_minutes`) y no cambian retroactivamente.
+- Los identificadores públicos `code` y `uuid` tienen índice único en MongoDB para evitar duplicados persistentes.
+- `code` mantiene el formato comercial `BM-YYYYMMDD-XXXX`; si hay colisión se reintenta de forma acotada.
+- Todas las rutas públicas por UUID validan el formato en la frontera HTTP y rechazan UUID inválidos con 422.
+- Los montos de cotización (`unit_cost`, `line_total`, `subtotal`, `tax_amount`, `total`) se congelan al crear el presupuesto y no se recalculan después.
+- La generación de PDF aplica branding en servidor (`site_logo`, `site_title`, `site_subtitle`) y no depende de JavaScript cliente.
+- El render de PDF usa `base_url` absoluto del proyecto detectado por módulo (no depende del directorio actual de arranque).
+- El enlace de WhatsApp se genera en backend con formato canónico `https://wa.me/?text={url_encoded_text}` e incluye empresa, código, total y link temporal.
+- La visibilidad de fotos en PDF está gobernada por `show_product_photos_in_pdf`; si está en `false`, se oculta la columna completa.
+- La resolución de imágenes para PDF se consulta por lote de SKU para evitar patrón `N+1` durante el render.
+- En rutas de descarga PDF (`/api/v1/budgets/{uuid}/pdf` y `/presupuesto/{uuid}/pdf`) los presupuestos expirados retornan HTTP 410.
+- Las imágenes se almacenan en `uploads/products/` (montado como volumen Docker)
+- Formatos de imagen permitidos: PNG, JPEG, WebP. Tamaño máximo: 2MB
+- Cada producto soporta entre 0 y 10 imagenes; la API responde `image_urls` con URLs absolutas
+- Cada producto soporta entre 0 y 15 tags; el backend los normaliza a minusculas y sin espacios laterales
+- WeasyPrint requiere `pydyf==0.11.*` (incompatibilidad con 0.12+)
+- MongoDB text index en `Product.name` para búsqueda full-text
+- Las categorías tienen relación M2M con productos vía `category_ids`
+- Los productos soportan hasta 6 colores (`colors: [{name, hex}]`); el primero es el default
+- Los productos tienen campos opcionales `description` (texto libre) y `brand` (marca)
+- Al crear presupuesto, cada item registra `color_name` y `color_hex` del color seleccionado
+- El slug de categoría se genera automáticamente con `python-slugify`
 
 ## Importación Excel
 
 El archivo `.xlsx` debe tener estas columnas (primera fila como headers):
 
-| nombre | sku | costo | unidad | moneda |
-|--------|-----|-------|--------|--------|
-| Producto A | SKU-001 | 25.50 | unidad | USD |
+| nombre | sku | costo | unidad | moneda | categoría (opcional) | descripción (opcional) | marca (opcional) | colores (opcional) | tags (opcional) |
+|--------|-----|-------|--------|--------|---------------------|----------------------|-----------------|--------------------|--------------------|
+| Producto A | SKU-001 | 25.50 | unidad | USD | pisos,acabados | Porcelanato premium | MarcaX | Rojo:#FF0000,Azul:#0000FF | metal, industrial |
 
 **Regla de colisión:** Si el SKU ya existe → actualiza. Si no → crea.
 
+**Tags:** Columna opcional. Separar múltiples tags por comas. Se normalizan a minúsculas, se eliminan duplicados y se limitan a 15 por producto.
+
+## Colores de Producto
+
+- Cada producto soporta de 0 a 6 colores con nombre descriptivo + codigo hexadecimal
+- Gestion desde el formulario admin (color picker + nombre) o via endpoint `PUT /api/v1/products/{id}/colors`
+- Tambien importables desde Excel (columnas opcionales: `categoria`, `descripcion`, `marca`, `colores`)
+- En el catalogo, el usuario selecciona un color antes de agregar al carrito (default: primer color)
+- El color seleccionado aparece en: vista HTML del presupuesto, PDF descargable, texto WhatsApp y modal de confirmacion
+
+## Contrato de tags e imagenes de producto
+
+### Payload de creacion/actualizacion
+
+```json
+{
+  "name": "Tornillo galvanizado",
+  "sku": "TOR-001",
+  "cost": 1.25,
+  "tags": ["ferreteria", " galvanizado "]
+}
+```
+
+- `tags`: lista opcional de 0 a 15 valores. El backend elimina espacios laterales, descarta vacios y normaliza a minusculas.
+- `images`: no se envia en JSON; se administra via `POST /api/v1/products/{id}/image`.
+
+### Respuesta de producto
+
+```json
+{
+  "id": "66cf00000000000000000001",
+  "name": "Tornillo galvanizado",
+  "sku": "TOR-001",
+  "cost": 1.25,
+  "unit": "unidad",
+  "currency": "USD",
+  "image_urls": [
+    "http://localhost:8000/uploads/products/66cf00000000000000000001_ab12cd34.png"
+  ],
+  "tags": ["ferreteria", "galvanizado"],
+  "category_ids": [],
+  "categories": [],
+  "colors": []
+}
+```
+
 ## Variables de Entorno
 
-| Variable | Valor por defecto | Descripción |
-|----------|-------------------|-------------|
-| `MONGO_URI` | `mongodb://mongodb:27017` | URI de conexión a MongoDB |
-| `MONGO_DB_NAME` | `budget_maker` | Nombre de la base de datos |
-| `APP_HOST` | `0.0.0.0` | Host del servidor |
-| `APP_PORT` | `8000` | Puerto del servidor |
+| Variable | Default | Descripción |
+|----------|---------|-------------|
+| `MONGO_URI` | `mongodb://mongodb:27017` | URI de MongoDB |
+| `MONGO_DB_NAME` | `budget_maker` | Nombre de la BD |
+| `JWT_SECRET_KEY` | `change-me-in-production` | Secreto JWT (cambiar en producción) |
+| `JWT_ALGORITHM` | `HS256` | Algoritmo JWT |
+| `JWT_EXPIRE_MINUTES` | `480` | Expiración del token (8h) |
+| `UPLOAD_DIR` | `uploads/products` | Directorio de imágenes |
 
-## Configuración Global (seed automático)
+### Datos Iniciales (Seeds)
 
-| Clave | Valor | Descripción |
-|-------|-------|-------------|
-| `porcentaje_impuesto` | 18 | % de impuesto sobre subtotal |
-| `tiempo_expiracion_link_minutos` | 30 | Minutos de validez del link |
+Al iniciar, la app crea automáticamente:
+- **Superadmin:** usuario `admin` / contraseña `admin1234`
+- **Configuración global tipada:** `tax_rate` (18), `link_ttl_minutes` (30), `show_product_photos_in_pdf` (`true`)
+- **Configuración auxiliar:** `site_title`, `site_subtitle`

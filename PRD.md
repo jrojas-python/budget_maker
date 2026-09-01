@@ -67,7 +67,15 @@ Servicio de generación de presupuestos/cotizaciones de productos. API RESTful c
 
 ### Importación Excel
 - Columnas esperadas: nombre, sku, costo, unidad, moneda
+- Columna opcional: colores (formato `Nombre:#HEX,Nombre:#HEX`)
 - Regla de colisión: si SKU existe → actualizar; si no → crear
+
+### Colores de Producto
+- Cada producto puede tener de 0 a 6 colores
+- Cada color tiene nombre descriptivo y código hexadecimal (`#RRGGBB`)
+- El primer color de la lista es el default
+- Al crear presupuesto: el usuario elige un color o se asigna el default
+- El color seleccionado aparece en la vista HTML, PDF y texto WhatsApp
 
 ### WhatsApp
 - Formato con markdown WhatsApp (`*bold*`)

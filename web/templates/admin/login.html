@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Login — Budget Maker{% endblock %}
+
+{% block navbar %}{% endblock %}
+
+{% block container_class %}login-container{% endblock %}
+
+{% block content %}
+<div class="login-card">
+    <h1>Budget Maker</h1>
+    <p class="subtitle">Panel de Administración</p>
+    <form onsubmit="event.preventDefault(); login(document.getElementById('username').value, document.getElementById('password').value);">
+        <div class="form-group">
+            <label>Usuario</label>
+            <input type="text" id="username" placeholder="admin" required autofocus>
+        </div>
+        <div class="form-group">
+            <label>Contraseña</label>
+            <input type="password" id="password" placeholder="••••••••" required>
+        </div>
+        <button type="submit" id="login-btn" class="btn btn-primary btn-full">Iniciar Sesión</button>
+    </form>
+</div>
+{% endblock %}

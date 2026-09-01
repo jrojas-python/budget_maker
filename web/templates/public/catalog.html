@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% block title %}Catálogo — Budget Maker{% endblock %}
+{% block container_class %}wide{% endblock %}
+{% block content %}
+<div class="catalog-header">
+    <h1 id="catalog-title">Catálogo de Productos</h1>
+    <p id="catalog-subtitle" style="display:none"></p>
+    <div class="search-bar">
+        <input type="text" id="search-input" placeholder="Buscar productos..." oninput="onSearchInput()">
+    </div>
+</div>
+
+<div class="catalog-layout">
+    <aside class="catalog-filters">
+        <h4>Filtros</h4>
+        <div class="filter-group">
+            <label>Categoría</label>
+            <select id="filter-category" onchange="onFilterChange()">
+                <option value="">Todas</option>
+            </select>
+        </div>
+        <div class="filter-group">
+            <label>Precio mínimo</label>
+            <input type="number" id="filter-min-price" placeholder="0" step="0.01" onchange="onFilterChange()">
+        </div>
+        <div class="filter-group">
+            <label>Precio máximo</label>
+            <input type="number" id="filter-max-price" placeholder="∞" step="0.01" onchange="onFilterChange()">
+        </div>
+        <div class="filter-group">
+            <label>Ordenar por</label>
+            <select id="filter-sort" onchange="onFilterChange()">
+                <option value="">Relevancia</option>
+                <option value="price_asc">Precio: menor a mayor</option>
+                <option value="price_desc">Precio: mayor a menor</option>
+                <option value="name_asc">Nombre: A-Z</option>
+                <option value="name_desc">Nombre: Z-A</option>
+            </select>
+        </div>
+    </aside>
+
+    <div class="catalog-main">
+        <div class="catalog-grid" id="catalog-grid">
+            <div class="loading">Cargando productos...</div>
+        </div>
+        <div id="pagination" class="pagination"></div>
+    </div>
+
+    <div class="budget-panel">
+        <h3>Presupuesto</h3>
+        <div id="cart-items" class="cart-items">
+            <p class="cart-empty">No hay productos seleccionados</p>
+        </div>
+        <div id="cart-totals" class="cart-totals hidden">
+            <div class="cart-line"><span>Subtotal:</span> <strong id="cart-subtotal">$0.00</strong></div>
+            <div class="cart-line"><span>Impuesto (<span id="cart-tax-pct">0</span>%):</span> <strong id="cart-tax">$0.00</strong></div>
+            <div class="cart-line total"><span>Total:</span> <strong id="cart-total">$0.00</strong></div>
+        </div>
+
+        <div id="client-form" class="client-form hidden">
+            <h4>Datos del cliente</h4>
+            <input type="text" id="c-nombres" placeholder="Nombres *" required>
+            <input type="text" id="c-apellidos" placeholder="Apellidos *" required>
+            <input type="text" id="c-documento" placeholder="Documento">
+            <input type="text" id="c-direccion" placeholder="Dirección">
+            <input type="text" id="c-vendedor" placeholder="Vendedor">
+        </div>
+
+        <button class="btn btn-primary btn-full" id="btn-create-budget" onclick="createBudget()" disabled>
+            Crear Presupuesto
+        </button>
+    </div>
+</div>
+
+<!-- Modal de presupuesto creado -->
+<div id="budget-modal" class="modal hidden">
+    <div class="modal-content modal-wide">
+        <h2>¡Presupuesto Creado!</h2>
+        <div class="budget-detail">
+            <div class="detail-header">
+                <div><strong>Código:</strong> <span id="modal-code"></span></div>
+                <div><strong>Fecha:</strong> <span id="modal-date"></span></div>
+            </div>
+            <div class="detail-section">
+                <h4>Datos del Cliente</h4>
+                <div class="detail-grid">
+                    <div><strong>Nombre:</strong> <span id="modal-client-name"></span></div>
+                    <div><strong>Documento:</strong> <span id="modal-client-doc"></span></div>
+                    <div><strong>Dirección:</strong> <span id="modal-client-dir"></span></div>
+                    <div><strong>Vendedor:</strong> <span id="modal-client-vendor"></span></div>
+                </div>
+            </div>
+            <div class="detail-section">
+                <h4>Productos</h4>
+                <table class="items-table">
+                    <thead><tr><th>SKU</th><th>Producto</th><th>Color</th><th>Cant.</th><th>P. Unit.</th><th>Subtotal</th></tr></thead>
+                    <tbody id="modal-items"></tbody>
+                </table>
+            </div>
+            <div class="detail-totals">
+                <div class="cart-line"><span>Subtotal:</span> <strong id="modal-subtotal"></strong></div>
+                <div class="cart-line"><span>Impuesto (<span id="modal-tax-pct"></span>%):</span> <strong id="modal-tax"></strong></div>
+                <div class="cart-line total"><span>Total:</span> <strong id="modal-total"></strong></div>
+            </div>
+        </div>
+        <div class="modal-actions">
+            <a id="modal-link" href="#" target="_blank" class="btn btn-primary">Ver Presupuesto</a>
+            <a id="modal-pdf" href="#" target="_blank" class="btn btn-pdf">Descargar PDF</a>
+            <a id="modal-whatsapp" href="#" target="_blank" class="btn btn-whatsapp">Enviar por WhatsApp</a>
+            <button class="btn btn-secondary" onclick="closeModal()">Cerrar</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/catalog.js"></script>
+{% endblock %}
