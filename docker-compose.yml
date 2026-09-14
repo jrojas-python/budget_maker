@@ -7,7 +7,7 @@ services:
     env_file:
       - .env
     environment:
-      MONGO_URI: mongodb://${MONGO_LOCAL_ROOT_USERNAME}:${MONGO_LOCAL_ROOT_PASSWORD}@mongodb:27017/${MONGO_DB_NAME}?authSource=admin
+      MONGO_URI: ${MONGO_URI}
       MONGO_DB_NAME: ${MONGO_DB_NAME}
     volumes:
       - .:/app
