@@ -153,6 +153,33 @@ async def test_cors_allows_each_configured_origin() -> None:
             assert response.headers["access-control-allow-origin"] == origin
 
 
+@pytest.mark.asyncio
+async def test_legacy_mounts_support_independent_storage_directories(tmp_path) -> None:
+    product_dir = tmp_path / "product-assets"
+    branding_dir = tmp_path / "branding-assets"
+    product_dir.mkdir()
+    branding_dir.mkdir()
+    (product_dir / "product.png").write_bytes(b"product")
+    (branding_dir / "logo.png").write_bytes(b"logo")
+
+    configured_settings = Settings(
+        _env_file=None,
+        upload_dir=str(product_dir),
+        branding_dir=str(branding_dir),
+    )
+    configured_app = create_app(configured_settings)
+    transport = ASGITransport(app=configured_app)
+
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        product_response = await client.get("/uploads/products/product.png")
+        branding_response = await client.get("/uploads/branding/logo.png")
+
+    assert product_response.status_code == 200
+    assert product_response.content == b"product"
+    assert branding_response.status_code == 200
+    assert branding_response.content == b"logo"
+
+
 def test_settings_rejects_empty_cors_allowed_origins() -> None:
     with pytest.raises(ValidationError, match="requiere al menos un origen"):
         Settings(_env_file=None, cors_allowed_origins=" , , ")

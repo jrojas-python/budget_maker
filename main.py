@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 from contextlib import asynccontextmanager
-from os.path import commonpath
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -44,7 +43,6 @@ def create_app(app_settings: Settings) -> FastAPI:
     branding_dir = Path(app_settings.branding_dir)
     upload_dir.mkdir(parents=True, exist_ok=True)
     branding_dir.mkdir(parents=True, exist_ok=True)
-    uploads_root = Path(commonpath([str(upload_dir), str(branding_dir)]))
 
     application = FastAPI(
         title="Budget Maker API",
@@ -62,7 +60,16 @@ def create_app(app_settings: Settings) -> FastAPI:
         expose_headers=["Content-Disposition"],
     )
 
-    application.mount("/uploads", StaticFiles(directory=str(uploads_root)), name="uploads")
+    application.mount(
+        "/uploads/products",
+        StaticFiles(directory=str(upload_dir)),
+        name="product_uploads",
+    )
+    application.mount(
+        "/uploads/branding",
+        StaticFiles(directory=str(branding_dir)),
+        name="branding_uploads",
+    )
     application.mount("/static", StaticFiles(directory="web/static"), name="static")
 
     application.include_router(auth_router)

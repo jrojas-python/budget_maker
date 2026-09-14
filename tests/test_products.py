@@ -311,6 +311,23 @@ async def test_get_product_uses_legacy_image_filename_fallback(client: AsyncClie
 
 
 @pytest.mark.asyncio
+async def test_legacy_product_file_is_served_from_uploads_mount(client: AsyncClient):
+    legacy_filename = "legacy-product-static.png"
+    legacy_path = Path(settings.upload_dir) / legacy_filename
+    legacy_path.parent.mkdir(parents=True, exist_ok=True)
+    legacy_path.write_bytes(b"legacy-product")
+
+    try:
+        response = await client.get(f"/uploads/products/{legacy_filename}")
+
+        assert response.status_code == 200
+        assert response.content == b"legacy-product"
+    finally:
+        if legacy_path.exists():
+            legacy_path.unlink()
+
+
+@pytest.mark.asyncio
 async def test_update_preserves_existing_tags(client: AsyncClient, auth_headers: dict[str, str]):
     res = await client.post(
         "/api/v1/products/",

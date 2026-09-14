@@ -425,6 +425,23 @@ async def test_delete_branding_legacy_path_removes_local_file_and_clears_value(
 
 
 @pytest.mark.asyncio
+async def test_legacy_branding_file_is_served_from_uploads_mount(client: AsyncClient):
+    legacy_filename = "legacy-branding-static.png"
+    legacy_path = Path(settings.branding_dir) / legacy_filename
+    legacy_path.parent.mkdir(parents=True, exist_ok=True)
+    legacy_path.write_bytes(b"legacy-branding")
+
+    try:
+        response = await client.get(f"/uploads/branding/{legacy_filename}")
+
+        assert response.status_code == 200
+        assert response.content == b"legacy-branding"
+    finally:
+        if legacy_path.exists():
+            legacy_path.unlink()
+
+
+@pytest.mark.asyncio
 async def test_delete_branding_restores_value_when_remote_delete_fails(
     client: AsyncClient,
     auth_headers: dict[str, str],

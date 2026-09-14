@@ -119,8 +119,8 @@ context:
 - PDF consume URLs HTTPS públicas y solo cae a local para legacy.
   [`budget_use_cases.py:221`](../../app/application/use_cases/budget_use_cases.py#L221)
 
-- `/uploads` sigue montado desde el root legacy configurado.
-  [`main.py:41`](../../main.py#L41)
+- `/uploads` monta productos y branding por separado, sin exigir un ancestro común.
+  [`main.py:40`](../../main.py#L40)
 
 - La guía operacional documenta Supabase, transición legacy y ejemplo actualizado.
   [`README.md:356`](../../README.md#L356)
@@ -138,3 +138,6 @@ context:
 
 - Cobertura de PDF con assets remotos y propagación de errores.
   [`test_budgets.py:690`](../../tests/test_budgets.py#L690)
+
+- Cobertura HTTP de mounts legacy incluso con directorios independientes.
+  [`test_cors.py:157`](../../tests/test_cors.py#L157)
