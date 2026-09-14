@@ -3,7 +3,12 @@ from pathlib import Path
 
 import pytest
 from httpx import AsyncClient
+from app.api.dependencies import get_auth_use_cases, get_config_use_cases
+from app.domain.models.budget import Budget
+from app.domain.models.category import Category
 from app.domain.models.global_config import GlobalConfig
+from app.domain.models.product import Product
+from app.domain.models.user import User
 
 
 @pytest.mark.asyncio
@@ -14,6 +19,42 @@ async def test_get_global_config_seeded(client: AsyncClient):
     assert isinstance(data["tax_rate"], (int, float))
     assert isinstance(data["link_ttl_minutes"], int)
     assert isinstance(data["show_product_photos_in_pdf"], bool)
+
+
+@pytest.mark.asyncio
+async def test_init_beanie_and_seeds_are_idempotent_on_empty_database(_init_db):
+    config_uc = get_config_use_cases()
+    auth_uc = get_auth_use_cases()
+
+    await config_uc.seed_defaults()
+    await auth_uc.seed_superadmin()
+    await config_uc.seed_defaults()
+    await auth_uc.seed_superadmin()
+
+    assert await GlobalConfig.find_all().count() == 1
+    assert await User.find(User.username == "admin").count() == 1
+
+    global_config = await GlobalConfig.find_one(GlobalConfig.singleton_key == "global")
+    assert global_config is not None
+    assert global_config.extra_settings["site_title"] == "BUDGET MAKER"
+    assert global_config.extra_settings["site_subtitle"] == "Catálogo de Productos POP"
+
+    global_indexes = await GlobalConfig.get_motor_collection().index_information()
+    product_indexes = await Product.get_motor_collection().index_information()
+    budget_indexes = await Budget.get_motor_collection().index_information()
+    user_indexes = await User.get_motor_collection().index_information()
+    category_indexes = await Category.get_motor_collection().index_information()
+
+    assert any(
+        info.get("unique") and info.get("key") == [("singleton_key", 1)]
+        for info in global_indexes.values()
+    )
+    assert product_indexes["sku_1"]["unique"] is True
+    assert budget_indexes["uq_budget_code"]["unique"] is True
+    assert budget_indexes["uq_budget_uuid"]["unique"] is True
+    assert user_indexes["username_1"]["unique"] is True
+    assert user_indexes["email_1"]["unique"] is True
+    assert category_indexes["slug_1"]["unique"] is True
 
 
 @pytest.mark.asyncio

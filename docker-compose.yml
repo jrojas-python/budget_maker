@@ -6,20 +6,40 @@ services:
       - "8000:8000"
     env_file:
       - .env
+    environment:
+      MONGO_URI: mongodb://${MONGO_LOCAL_ROOT_USERNAME}:${MONGO_LOCAL_ROOT_PASSWORD}@mongodb:27017/${MONGO_DB_NAME}?authSource=admin
+      MONGO_DB_NAME: ${MONGO_DB_NAME}
     volumes:
       - .:/app
       - ./uploads:/app/uploads
     depends_on:
-      - mongodb
+      mongodb:
+        condition: service_healthy
     restart: unless-stopped
 
   mongodb:
     image: mongo:7
     container_name: budget_maker_mongo
+    entrypoint:
+      - /bin/sh
+      - /docker-entrypoint-local/mongodb-entrypoint.sh
     ports:
       - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_LOCAL_ROOT_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_LOCAL_ROOT_PASSWORD}
     volumes:
       - mongo_data:/data/db
+      - ./docker/mongodb-entrypoint.sh:/docker-entrypoint-local/mongodb-entrypoint.sh:ro
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >
+          mongosh --quiet --username "$$MONGO_INITDB_ROOT_USERNAME" --password "$$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin --eval "db.adminCommand({ ping: 1 }).ok"
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
     restart: unless-stopped
 
   mongo-express:
@@ -28,10 +48,13 @@ services:
     ports:
       - "8081:8081"
     environment:
-      ME_CONFIG_MONGODB_URL: mongodb://mongodb:27017
+      ME_CONFIG_MONGODB_ADMINUSERNAME: ${MONGO_LOCAL_ROOT_USERNAME}
+      ME_CONFIG_MONGODB_ADMINPASSWORD: ${MONGO_LOCAL_ROOT_PASSWORD}
+      ME_CONFIG_MONGODB_URL: mongodb://${MONGO_LOCAL_ROOT_USERNAME}:${MONGO_LOCAL_ROOT_PASSWORD}@mongodb:27017/?authSource=admin
       ME_CONFIG_BASICAUTH: "false"
     depends_on:
-      - mongodb
+      mongodb:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:

@@ -1,8 +1,8 @@
 from typing import AsyncGenerator
 
 import pytest_asyncio
-from httpx import ASGITransport, AsyncClient
 from beanie import init_beanie
+from httpx import ASGITransport, AsyncClient
 from motor.motor_asyncio import AsyncIOMotorClient
 
 from app.domain.models.budget import Budget
@@ -10,19 +10,24 @@ from app.domain.models.category import Category
 from app.domain.models.global_config import GlobalConfig
 from app.domain.models.product import Product
 from app.domain.models.user import User
+from settings.config import Settings, TEST_MONGO_DB_NAME, ensure_safe_test_mongo_uri
+
+TEST_SETTINGS = Settings()
+TEST_DB_NAME = TEST_MONGO_DB_NAME
+TEST_MONGO_URI = ensure_safe_test_mongo_uri(TEST_SETTINGS.test_mongo_uri, expected_db_name=TEST_DB_NAME)
 
 
 @pytest_asyncio.fixture
 async def _init_db():
     """Inicializa la base de datos de test por caso de prueba."""
-    client = AsyncIOMotorClient("mongodb://localhost:27017")
-    db = client["budget_maker_test"]
+    client = AsyncIOMotorClient(TEST_MONGO_URI)
+    db = client[TEST_DB_NAME]
     await init_beanie(
         database=db,
         document_models=[GlobalConfig, Product, Budget, User, Category],
     )
     yield db
-    await client.drop_database("budget_maker_test")
+    await client.drop_database(TEST_DB_NAME)
     client.close()
 
 

@@ -25,3 +25,7 @@
 - source_spec: `C:\Users\JesusRojas\Documents\pyfiles\budget_maker\_bmad-output\implementation-artifacts\spec-2-2-identificacion-publica-y-expiracion-del-presupuesto.md`
   summary: Definir estrategia de saneamiento/migración de datos legacy antes de imponer índices únicos de `code` y `uuid`.
   evidence: Si existen duplicados históricos en `budgets`, la creación de índices únicos puede fallar en arranque; es real pero fuera del alcance de esta historia.
+
+- source_spec: `C:\Users\JesusRojas\Documents\pyfiles\budget_maker\_bmad-output\implementation-artifacts\spec-conexion-mongodb-configurable-local-y-externa.md`
+  summary: `mongo-express` en `docker-compose.yml` sigue con `ME_CONFIG_BASICAUTH: "false"`, exponiendo su UI sin autenticación propia en `:8081`.
+  evidence: El review de la conexión MongoDB configurable detectó que este ajuste ya existía antes de esta historia (mongo-express solo delega en las credenciales de MongoDB para su propia conexión, no para el acceso HTTP a la UI); no está en el alcance de conectividad de esta historia pero debilita el endurecimiento de seguridad local recién introducido.

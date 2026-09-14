@@ -5,7 +5,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
-from app.database import init_db
+from app.database import close_db, init_db
 from app.api.v1.auth import router as auth_router
 from app.api.v1.budgets import router as budgets_router
 from app.api.v1.categories import router as categories_router
@@ -26,13 +26,15 @@ Path(settings.branding_dir).mkdir(parents=True, exist_ok=True)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
-    # Seeds
-    config_uc = get_config_use_cases()
-    await config_uc.seed_defaults()
-    auth_uc = get_auth_use_cases()
-    await auth_uc.seed_superadmin()
-    logger.info("Aplicación iniciada correctamente")
-    yield
+    try:
+        config_uc = get_config_use_cases()
+        await config_uc.seed_defaults()
+        auth_uc = get_auth_use_cases()
+        await auth_uc.seed_superadmin()
+        logger.info("Aplicación iniciada correctamente")
+        yield
+    finally:
+        await close_db()
 
 
 app = FastAPI(

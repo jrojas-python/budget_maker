@@ -4,6 +4,36 @@ Registro de iteraciones del proyecto.
 
 ---
 
+## [2026-09-13] Iteración 12 — Conexión MongoDB configurable local y externa
+
+### Realizado
+- Se endureció `settings/config.py` para validar URIs `mongodb://` y `mongodb+srv://`, enmascarar credenciales en logs y bloquear `TEST_MONGO_URI` inseguros o remotos.
+- Se reforzó `app/database.py` para registrar la conexión sin secretos, ejecutar `ping` antes de `init_beanie` y cerrar el cliente global en el shutdown del lifespan.
+- Se autenticó el stack local en `docker-compose.yml` con usuario raíz configurable, `authSource=admin`, healthcheck de MongoDB, `mongo-express` autenticado y un bootstrap idempotente del usuario raíz para volúmenes locales preexistentes.
+- Se creó `.env.example` con ejemplos sanitizados para Atlas/local y se actualizó `.env` ignorado con perfil local autenticado, credenciales Docker y URI exclusiva de pruebas.
+- Se migraron las pruebas a `TEST_MONGO_URI`, se añadieron pruebas de validación/seguridad de configuración Mongo y se verificó la idempotencia de seeds e índices declarados.
+- Se actualizó README con el flujo para alternar entre MongoDB local y externo, allowlist de Atlas, arranque limpio y la inicialización automática de Beanie/seeds.
+- **Revisión post-implementación** (`blind-hunter`, `edge-case-hunter`, `verification-gap`): `app/database.py` ahora cierra el cliente Motor si `ping`/`init_beanie` fallan; `ensure_safe_test_mongo_uri` exige contraseña no vacía y base `budget_maker_test` explícita; se añadieron pruebas para credenciales/`authSource`/base faltantes en `TEST_MONGO_URI` y una prueba del `lifespan` real de `main.py`; se documentó en README/`.env.example` el riesgo de caracteres reservados en `MONGO_LOCAL_ROOT_PASSWORD` y la rotación del superadmin ante bases externas compartidas.
+
+### Archivos modificados
+- `settings/config.py`
+- `app/database.py`
+- `main.py`
+- `docker-compose.yml`
+- `docker/mongodb-entrypoint.sh`
+- `.env`
+- `.env.example`
+- `.gitignore`
+- `tests/conftest.py`
+- `tests/test_config.py`
+- `tests/test_mongo_config.py`
+- `README.md`
+- `.agents/changelog.md`
+- `_bmad-output/implementation-artifacts/spec-conexion-mongodb-configurable-local-y-externa.md`
+- `_bmad-output/implementation-artifacts/deferred-work.md`
+
+---
+
 ## [2026-08-31] Iteración 11 — Cierre operativo de historias 2.1, 2.2 y 2.3
 
 ### Realizado

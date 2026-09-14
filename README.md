@@ -55,11 +55,38 @@ budget_maker/
 ### Requisitos
 - Docker + Docker Compose
 
-### Iniciar
+### Configuración de entorno
+
+1. Copia `.env.example` a `.env`.
+2. Define `MONGO_URI` con la instancia que quieras usar fuera de Docker:
+   - **Atlas / MongoDB externo:** pega únicamente la URI real `mongodb+srv://...` en tu `.env` local no versionado.
+   - **MongoDB local autenticado:** usa una URI `mongodb://` con usuario, contraseña y `authSource=admin`.
+3. Mantén `MONGO_DB_NAME=budget_maker`.
+4. Configura `TEST_MONGO_URI` para que apunte **solo** a `budget_maker_test` en `localhost` con autenticación.
+5. Ajusta `MONGO_LOCAL_ROOT_USERNAME` y `MONGO_LOCAL_ROOT_PASSWORD` para el stack Docker local. Evita `@ : / ? # %` en la contraseña: Docker Compose la interpola directamente dentro de una URI Mongo y esos caracteres la romperían; si necesitas usarlos, aplica percent-encoding manualmente.
+
+`.env.example` ya incluye:
+- un ejemplo sanitizado de Atlas,
+- las credenciales locales requeridas por Docker Compose,
+- una URI local autenticada comentada para el contenedor `api`,
+- y la URI aislada de pruebas.
+
+### Iniciar entorno local completo
 
 ```bash
-docker-compose up --build
+docker compose up --build
 ```
+
+El servicio `api` siempre consume `MONGO_URI` y `MONGO_DB_NAME` como fuente de configuración. En Docker Compose, `MONGO_URI` se sobreescribe dentro del contenedor para apuntar al MongoDB local autenticado (`mongodb`) sin tocar la URI externa que puedas conservar en tu `.env`.
+
+### Iniciar solo MongoDB para pruebas locales
+
+```bash
+docker compose up -d mongodb
+```
+
+MongoDB arranca con autenticación raíz habilitada. Si ejecutas la API fuera de Docker, usa la URI local autenticada de `localhost` o una URI externa válida.
+Si ya existía un volumen local anónimo, el contenedor intenta crear el usuario raíz configurado sin borrar datos ni volúmenes; si las credenciales no coinciden con un usuario preexistente, el arranque falla de forma visible para evitar conexiones ambiguas.
 
 ### Servicios
 
@@ -71,14 +98,28 @@ docker-compose up --build
 
 ### Variables de Entorno
 
-| Variable | Default | Descripción |
-|----------|---------|-------------|
-| `MONGO_URI` | `mongodb://mongodb:27017` | URI de MongoDB |
-| `MONGO_DB_NAME` | `budget_maker` | Nombre de la BD |
-| `JWT_SECRET_KEY` | `change-me-in-production` | Secreto JWT (cambiar en producción) |
-| `JWT_ALGORITHM` | `HS256` | Algoritmo JWT |
-| `JWT_EXPIRE_MINUTES` | `480` | Expiración del token (8h) |
-| `UPLOAD_DIR` | `uploads/products` | Directorio de imágenes |
+| Variable | Ejemplo / Default | Descripción |
+|----------|-------------------|-------------|
+| `MONGO_URI` | `mongodb+srv://<usuario>:<password>@<cluster>.mongodb.net/?retryWrites=true&w=majority` | URI principal del backend. Acepta `mongodb://` y `mongodb+srv://`. |
+| `MONGO_DB_NAME` | `budget_maker` | Base sobre la que Beanie registra colecciones e índices. |
+| `TEST_MONGO_URI` | `mongodb://bm_local_admin:cambia-esta-clave-local@localhost:27017/budget_maker_test?authSource=admin` | URI exclusiva de pruebas. Nunca debe apuntar a Atlas ni a otra base. |
+| `MONGO_LOCAL_ROOT_USERNAME` | `bm_local_admin` | Usuario raíz usado por el MongoDB local autenticado del stack Docker. |
+| `MONGO_LOCAL_ROOT_PASSWORD` | `cambia-esta-clave-local` | Contraseña raíz usada por MongoDB local, `api` y `mongo-express`. |
+| `JWT_SECRET_KEY` | `change-me-in-production` | Secreto JWT (cambiar en producción). |
+| `JWT_ALGORITHM` | `HS256` | Algoritmo JWT. |
+| `JWT_EXPIRE_MINUTES` | `480` | Expiración del token (8h). |
+| `UPLOAD_DIR` | `uploads/products` | Directorio de imágenes de productos. |
+| `BRANDING_DIR` | `uploads/branding` | Directorio de logos e imágenes de branding. |
+
+### Conectar una instancia MongoDB externa nueva
+
+1. Crea la base `budget_maker` (o la que definas en `MONGO_DB_NAME`) en tu proveedor MongoDB.
+2. Añade la IP pública del entorno donde corre la API a la allowlist/regla de red del proveedor.
+3. Crea un usuario con permisos sobre esa base.
+4. Pega la URI real `mongodb+srv://...` o `mongodb://...` únicamente en `.env`.
+5. Inicia la API; durante el lifespan se ejecuta `init_db()`, se valida la conexión con `ping`, Beanie registra colecciones/índices y luego se crean de forma idempotente la configuración global y el superadministrador.
+
+Si la URI es inválida, falla DNS/red o la autenticación es incorrecta, el arranque falla de forma visible; la aplicación no degrada silenciosamente a una conexión anónima.
 
 ### Datos Iniciales (Seeds)
 
@@ -86,6 +127,8 @@ Al iniciar, la app crea automáticamente:
 - **Superadmin:** usuario `admin` / contraseña `admin1234`
 - **Configuración global tipada:** `tax_rate` (18), `link_ttl_minutes` (30), `show_product_photos_in_pdf` (`true`)
 - **Configuración auxiliar:** `site_title`, `site_subtitle`
+
+Las semillas son idempotentes: un arranque limpio crea colecciones, índices y datos iniciales; reinicios posteriores no duplican ni la configuración global ni el superadministrador. Si conectas una base externa compartida o productiva, cambia la contraseña del superadmin (`DEFAULT_ADMIN_PASSWORD`) inmediatamente después del primer arranque; las credenciales por defecto son solo para desarrollo local.
 
 ## Referencia API
 
