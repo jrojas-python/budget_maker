@@ -5,6 +5,7 @@ from httpx import ASGITransport, AsyncClient
 from pydantic import ValidationError
 
 from main import create_app
+from app.api.dependencies import get_product_use_cases
 from settings.config import DEFAULT_CORS_ALLOWED_ORIGIN, Settings
 
 
@@ -178,6 +179,23 @@ async def test_legacy_mounts_support_independent_storage_directories(tmp_path) -
     assert product_response.content == b"product"
     assert branding_response.status_code == 200
     assert branding_response.content == b"logo"
+
+
+def test_create_app_scopes_image_services_to_supplied_settings(tmp_path) -> None:
+    configured_settings = Settings(
+        _env_file=None,
+        upload_dir=str(tmp_path / "products"),
+        branding_dir=str(tmp_path / "branding"),
+        supabase_url="https://scoped-project.supabase.co",
+        supabase_secret_key="scoped-secret",
+    )
+
+    configured_app = create_app(configured_settings)
+    product_factory = configured_app.dependency_overrides[get_product_use_cases]
+    product_use_cases = product_factory()
+
+    assert product_use_cases._image._settings is configured_settings
+    assert product_use_cases._image._storage._settings is configured_settings
 
 
 def test_settings_rejects_empty_cors_allowed_origins() -> None:

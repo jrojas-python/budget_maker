@@ -192,7 +192,10 @@ async def update_config(
     _: User = Depends(get_current_user),
     uc: ConfigUseCases = Depends(get_config_use_cases),
 ):
-    config = await uc.update(key, body.value, body.description)
+    try:
+        config = await uc.update(key, body.value, body.description)
+    except ImageReferenceError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
     return GlobalConfigResponse(
         key=str(config["key"]),
         value=config["value"],

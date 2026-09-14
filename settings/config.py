@@ -11,7 +11,7 @@ LOCAL_TEST_MONGO_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
 DEFAULT_CORS_ALLOWED_ORIGIN = (
     "https://budget-maker-frontend.vercel.app,http://localhost:3000,http://localhost:3001"
 )
-_STORAGE_BUCKET_RE = re.compile(r"^[a-z0-9](?:[a-z0-9._-]{1,61}[a-z0-9])?$")
+_STORAGE_BUCKET_RE = re.compile(r"^[a-z0-9](?:[a-z0-9._-]{0,61}[a-z0-9])?$")
 _STORAGE_PREFIX_SEGMENT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
 
@@ -100,6 +100,8 @@ def validate_supabase_url(value: str) -> str:
         or parsed.path not in {"", "/"}
     ):
         raise ValueError("SUPABASE_URL debe contener únicamente esquema y host del proyecto.")
+    if parsed.scheme.lower() == "http" and parsed.hostname not in LOCAL_TEST_MONGO_HOSTS:
+        raise ValueError("SUPABASE_URL requiere HTTPS excepto para desarrollo local.")
 
     try:
         port = parsed.port
@@ -224,7 +226,12 @@ class Settings(BaseSettings):
 
     upload_dir: str = Field(default="uploads/products", validation_alias="UPLOAD_DIR")
     branding_dir: str = Field(default="uploads/branding", validation_alias="BRANDING_DIR")
-    max_image_size_mb: int = Field(default=2, validation_alias="MAX_IMAGE_SIZE_MB")
+    max_image_size_mb: int = Field(
+        default=2,
+        ge=1,
+        le=2,
+        validation_alias="MAX_IMAGE_SIZE_MB",
+    )
 
     supabase_url: str = Field(default="", validation_alias="SUPABASE_URL")
     supabase_secret_key: str = Field(default="", validation_alias="SUPABASE_SECRET_KEY")
@@ -263,6 +270,11 @@ class Settings(BaseSettings):
     @classmethod
     def _validate_supabase_url(cls, value: str) -> str:
         return validate_supabase_url(value)
+
+    @field_validator("supabase_secret_key")
+    @classmethod
+    def _normalize_supabase_secret_key(cls, value: str) -> str:
+        return value.strip()
 
     @field_validator("supabase_products_bucket")
     @classmethod

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import io
 from pathlib import Path
 from typing import Any
@@ -13,7 +14,11 @@ from app.domain.models.category import Category
 from app.domain.models.product import Product
 from app.infrastructure.services.image_service import ImageService
 from app.infrastructure.services import supabase_storage_service as supabase_storage_module
-from app.infrastructure.services.supabase_storage_service import SupabaseStorageService
+from app.infrastructure.services.supabase_storage_service import (
+    SupabaseStorageOperationError,
+    SupabaseStorageReferenceError,
+    SupabaseStorageService,
+)
 from settings.config import Settings, settings
 
 _SUPABASE_PRODUCTS_PREFIX = (
@@ -212,6 +217,54 @@ async def test_upload_image_rejects_invalid_format(client: AsyncClient, auth_hea
 
 
 @pytest.mark.asyncio
+async def test_upload_image_rejects_empty_file(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+):
+    created = await client.post(
+        "/api/v1/products/",
+        json={"name": "Producto vacío", "sku": "IMG-EMPTY", "cost": 10.0},
+        headers=auth_headers,
+    )
+    product_id = created.json()["id"]
+
+    response = await client.post(
+        f"/api/v1/products/{product_id}/image",
+        files={"file": ("empty.png", io.BytesIO(b""), "image/png")},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 422
+    assert "vacío" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_upload_image_returns_502_when_storage_fails(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    fake_storage_service: Any,
+):
+    created = await client.post(
+        "/api/v1/products/",
+        json={"name": "Storage caído", "sku": "IMG-STORAGE-FAIL", "cost": 10.0},
+        headers=auth_headers,
+    )
+    product_id = created.json()["id"]
+    fake_storage_service.fail_product_upload = True
+
+    response = await client.post(
+        f"/api/v1/products/{product_id}/image",
+        files={"file": ("photo.png", io.BytesIO(_make_png_bytes()), "image/png")},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 502
+    persisted = await Product.get(product_id)
+    assert persisted is not None
+    assert persisted.images == []
+
+
+@pytest.mark.asyncio
 async def test_delete_specific_image_removes_only_requested_file(
     client: AsyncClient,
     auth_headers: dict[str, str],
@@ -268,6 +321,38 @@ async def test_delete_product_image_returns_404_when_missing(
         headers=auth_headers,
     )
     assert res.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_delete_specific_image_restores_reference_when_storage_fails(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    fake_storage_service: Any,
+):
+    created = await client.post(
+        "/api/v1/products/",
+        json={"name": "Rollback delete", "sku": "IMG-ROLLBACK", "cost": 10.0},
+        headers=auth_headers,
+    )
+    product_id = created.json()["id"]
+    uploaded = await client.post(
+        f"/api/v1/products/{product_id}/image",
+        files={"file": ("rollback.png", io.BytesIO(_make_png_bytes()), "image/png")},
+        headers=auth_headers,
+    )
+    image_url = uploaded.json()["image_urls"][0]
+    fake_storage_service.fail_delete_references.add(image_url)
+
+    response = await client.delete(
+        f"/api/v1/products/{product_id}/images/{Path(urlsplit(image_url).path).name}",
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 502
+    persisted = await Product.get(product_id)
+    assert persisted is not None
+    assert persisted.images == [image_url]
+    assert fake_storage_service.has_reference(image_url)
 
 
 @pytest.mark.asyncio
@@ -389,17 +474,18 @@ async def test_upload_image_rolls_back_storage_when_repository_update_fails(
     )
     product_id = res.json()["id"]
 
-    original_update = dependencies_module._product_repo.update
+    original_add_image = dependencies_module._product_repo.add_image
 
-    async def failing_update(doc_id: str, data: dict):
-        if doc_id == product_id and any(
-            str(value).startswith(_SUPABASE_PRODUCTS_PREFIX)
-            for value in data.get("images", [])
-        ):
+    async def failing_add_image(
+        doc_id: str,
+        filename: str,
+        max_items: int | None = None,
+    ):
+        if doc_id == product_id and str(filename).startswith(_SUPABASE_PRODUCTS_PREFIX):
             raise RuntimeError("mongo fail")
-        return await original_update(doc_id, data)
+        return await original_add_image(doc_id, filename, max_items)
 
-    monkeypatch.setattr(dependencies_module._product_repo, "update", failing_update)
+    monkeypatch.setattr(dependencies_module._product_repo, "add_image", failing_add_image)
 
     with pytest.raises(RuntimeError, match="mongo fail"):
         await client.post(
@@ -412,6 +498,47 @@ async def test_upload_image_rolls_back_storage_when_repository_update_fails(
     assert product is not None
     assert product.images == []
     assert fake_storage_service.objects == {}
+
+
+@pytest.mark.asyncio
+async def test_concurrent_uploads_do_not_exceed_ten_images(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    fake_storage_service: Any,
+):
+    existing_urls = [
+        fake_storage_service.store_product_object(f"concurrent/{index}.png")
+        for index in range(9)
+    ]
+    product = Product(
+        name="Concurrente",
+        sku="CONCURRENT-UPLOAD",
+        cost=10.0,
+        images=existing_urls,
+    )
+    await product.insert()
+
+    responses = await asyncio.gather(
+        client.post(
+            f"/api/v1/products/{product.id}/image",
+            files={"file": ("first.png", io.BytesIO(_make_png_bytes()), "image/png")},
+            headers=auth_headers,
+        ),
+        client.post(
+            f"/api/v1/products/{product.id}/image",
+            files={"file": ("second.png", io.BytesIO(_make_png_bytes()), "image/png")},
+            headers=auth_headers,
+        ),
+    )
+
+    assert sorted(response.status_code for response in responses) == [200, 422]
+    persisted = await Product.get(product.id)
+    assert persisted is not None
+    assert len(persisted.images) == 10
+    stored_product_objects = [
+        key for key in fake_storage_service.objects if key[0] == "products"
+    ]
+    assert len(stored_product_objects) == 10
 
 
 @pytest.mark.asyncio
@@ -476,15 +603,16 @@ async def test_delete_product_cascades_remote_and_legacy_images(
     legacy_path.parent.mkdir(parents=True, exist_ok=True)
     legacy_path.write_bytes(b"legacy-delete")
 
-    remote_url = fake_storage_service.store_product_object("delete-product/remote.png")
     product = Product(
         name="Eliminar con assets",
         sku="DEL-ASSET-001",
         cost=10.0,
-        images=[remote_url],
         image_filename=legacy_filename,
     )
     await product.insert()
+    remote_url = fake_storage_service.store_product_object(f"{product.id}/remote.png")
+    product.images = [remote_url]
+    await product.save()
 
     try:
         res = await client.delete(f"/api/v1/products/{product.id}", headers=auth_headers)
@@ -503,17 +631,17 @@ async def test_delete_product_keeps_only_remaining_references_when_cleanup_fails
     auth_headers: dict[str, str],
     fake_storage_service: Any,
 ):
-    first_url = fake_storage_service.store_product_object("cleanup-fail/first.png")
-    second_url = fake_storage_service.store_product_object("cleanup-fail/second.png")
-    fake_storage_service.fail_delete_references.add(second_url)
-
     product = Product(
         name="Eliminar con rollback parcial",
         sku="DEL-ASSET-002",
         cost=10.0,
-        images=[first_url, second_url],
     )
     await product.insert()
+    first_url = fake_storage_service.store_product_object(f"{product.id}/first.png")
+    second_url = fake_storage_service.store_product_object(f"{product.id}/second.png")
+    fake_storage_service.fail_delete_references.add(second_url)
+    product.images = [first_url, second_url]
+    await product.save()
 
     res = await client.delete(f"/api/v1/products/{product.id}", headers=auth_headers)
 
@@ -524,6 +652,38 @@ async def test_delete_product_keeps_only_remaining_references_when_cleanup_fails
     assert persisted.image_filename is None
     assert not fake_storage_service.has_reference(first_url)
     assert fake_storage_service.has_reference(second_url)
+
+
+@pytest.mark.asyncio
+async def test_delete_product_clears_references_when_mongo_delete_fails(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    fake_storage_service: Any,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    product = Product(
+        name="Fallo Mongo delete",
+        sku="DEL-MONGO-FAIL",
+        cost=10.0,
+    )
+    await product.insert()
+    remote_url = fake_storage_service.store_product_object(f"{product.id}/remote.png")
+    product.images = [remote_url]
+    await product.save()
+
+    async def failing_delete(self, *args, **kwargs):
+        raise RuntimeError("mongo delete fail")
+
+    monkeypatch.setattr(Product, "delete", failing_delete)
+
+    with pytest.raises(RuntimeError, match="mongo delete fail"):
+        await client.delete(f"/api/v1/products/{product.id}", headers=auth_headers)
+
+    persisted = await Product.get(product.id)
+    assert persisted is not None
+    assert persisted.images == []
+    assert persisted.image_filename is None
+    assert not fake_storage_service.has_reference(remote_url)
 
 
 @pytest.mark.asyncio
@@ -562,20 +722,28 @@ async def test_supabase_storage_service_awaits_async_public_url(
         def __init__(self) -> None:
             self.awaited = False
             self.uploaded_paths: list[str] = []
+            self.uploaded_content = b""
+            self.uploaded_options: dict[str, str] = {}
 
         async def upload(self, path: str, content: bytes, options: dict[str, str]) -> None:
             self.uploaded_paths.append(path)
+            self.uploaded_content = content
+            self.uploaded_options = options
 
         async def get_public_url(self, path: str, options=None) -> str:
             self.awaited = True
             return f"https://cdn.example.com/{path}?signed=false"
 
+        async def remove(self, paths: list[str]) -> None:
+            self.removed_paths = paths
+
     class FakeStorage:
         def __init__(self) -> None:
             self.bucket = FakeBucket()
+            self.bucket_names: list[str] = []
 
         def from_(self, bucket_name: str) -> FakeBucket:
-            assert bucket_name == "products"
+            self.bucket_names.append(bucket_name)
             return self.bucket
 
     class FakeClient:
@@ -606,10 +774,149 @@ async def test_supabase_storage_service_awaits_async_public_url(
         content_type="image/png",
     )
 
-    assert uploaded_url.startswith("https://cdn.example.com/prod-123/")
-    assert uploaded_url.endswith("?signed=false")
+    assert uploaded_url.startswith(
+        "https://budget-maker-tests.supabase.co/storage/v1/object/public/products/prod-123/"
+    )
+    assert service.is_product_public_url(uploaded_url)
+    await service.delete_product_image(uploaded_url)
     assert service._client.storage.bucket.awaited is True
     assert service._client.storage.bucket.uploaded_paths[0].startswith("prod-123/")
+    assert service._client.storage.bucket.uploaded_content == b"image-bytes"
+    assert service._client.storage.bucket.uploaded_options == {
+        "content-type": "image/png",
+        "upsert": "false",
+    }
+    assert service._client.storage.bucket.removed_paths == [
+        service._client.storage.bucket.uploaded_paths[0]
+    ]
+
+    branding_url = await service.upload_branding_asset(
+        key="site_logo",
+        content=b"logo-bytes",
+        original_filename="logo.png",
+        content_type="image/png",
+    )
+    assert "/media/branding/site_logo-" in branding_url
+    assert service._client.storage.bucket.uploaded_content == b"logo-bytes"
+    assert service._client.storage.bucket.uploaded_options == {
+        "content-type": "image/png",
+        "upsert": "true",
+    }
+    assert service._client.storage.bucket_names == ["products", "products", "media"]
+
+
+@pytest.mark.asyncio
+async def test_supabase_storage_service_rejects_cross_branding_key():
+    test_settings = Settings(
+        _env_file=None,
+        mongo_uri=settings.mongo_uri,
+        mongo_db_name=settings.mongo_db_name,
+        test_mongo_uri=settings.test_mongo_uri,
+        supabase_url="https://budget-maker-tests.supabase.co",
+        supabase_secret_key="service-secret",
+    )
+    service = SupabaseStorageService(test_settings)
+
+    with pytest.raises(SupabaseStorageReferenceError):
+        await service.delete_branding_asset(
+            "https://budget-maker-tests.supabase.co/storage/v1/object/public/"
+            "media/branding/site_icon-example.png",
+            expected_key="site_logo",
+        )
+
+
+@pytest.mark.asyncio
+async def test_supabase_storage_service_removes_object_when_public_url_fails(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    class FakeBucket:
+        def __init__(self) -> None:
+            self.uploaded_path = ""
+            self.removed_paths: list[str] = []
+
+        async def upload(self, path: str, content: bytes, options: dict[str, str]) -> None:
+            self.uploaded_path = path
+
+        def get_public_url(self, path: str) -> str:
+            raise RuntimeError("public url failed")
+
+        async def remove(self, paths: list[str]) -> None:
+            self.removed_paths.extend(paths)
+
+    class FakeStorage:
+        def __init__(self) -> None:
+            self.bucket = FakeBucket()
+
+        def from_(self, bucket_name: str) -> FakeBucket:
+            return self.bucket
+
+    class FakeClient:
+        def __init__(self) -> None:
+            self.storage = FakeStorage()
+
+    async def fake_factory(url: str, key: str) -> FakeClient:
+        return FakeClient()
+
+    monkeypatch.setattr(supabase_storage_module, "_load_async_client_factory", lambda: fake_factory)
+    test_settings = Settings(
+        _env_file=None,
+        mongo_uri=settings.mongo_uri,
+        mongo_db_name=settings.mongo_db_name,
+        test_mongo_uri=settings.test_mongo_uri,
+        supabase_url="https://budget-maker-tests.supabase.co",
+        supabase_secret_key="service-secret",
+    )
+    service = SupabaseStorageService(test_settings)
+
+    with pytest.raises(SupabaseStorageOperationError):
+        await service.upload_product_image(
+            content=b"image-bytes",
+            product_id="prod-123",
+            original_filename="photo.png",
+            content_type="image/png",
+        )
+
+    assert service._client.storage.bucket.removed_paths == [
+        service._client.storage.bucket.uploaded_path
+    ]
+
+
+@pytest.mark.asyncio
+async def test_supabase_storage_service_rejects_cross_product_delete(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    test_settings = Settings(
+        _env_file=None,
+        mongo_uri=settings.mongo_uri,
+        mongo_db_name=settings.mongo_db_name,
+        test_mongo_uri=settings.test_mongo_uri,
+        supabase_url="https://budget-maker-tests.supabase.co",
+        supabase_secret_key="service-secret",
+    )
+    service = SupabaseStorageService(test_settings)
+
+    with pytest.raises(SupabaseStorageReferenceError):
+        await service.delete_product_image(
+            "https://budget-maker-tests.supabase.co/storage/v1/object/public/"
+            "products/product-a/image.png",
+            expected_product_id="product-b",
+        )
+
+
+def test_supabase_storage_service_rejects_different_origin():
+    test_settings = Settings(
+        _env_file=None,
+        mongo_uri=settings.mongo_uri,
+        mongo_db_name=settings.mongo_db_name,
+        test_mongo_uri=settings.test_mongo_uri,
+        supabase_url="https://budget-maker-tests.supabase.co:8443",
+        supabase_secret_key="service-secret",
+    )
+    service = SupabaseStorageService(test_settings)
+
+    assert not service.is_product_public_url(
+        "https://budget-maker-tests.supabase.co/storage/v1/object/public/products/a.png"
+    )
 
 
 @pytest.mark.asyncio

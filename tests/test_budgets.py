@@ -777,3 +777,26 @@ async def test_pdf_generation_error_with_remote_assets_is_propagated(
 
     with pytest.raises(RuntimeError, match="pdf unavailable"):
         await client.get(f"/api/v1/budgets/{budget_uuid}/pdf")
+
+
+@pytest.mark.asyncio
+async def test_pdf_ignores_external_and_loopback_asset_urls(
+    client: AsyncClient,
+    auth_headers: dict,
+):
+    from app.api.dependencies import get_budget_use_cases
+
+    await _create_product(client, auth_headers)
+    uc = get_budget_use_cases()
+    product = await uc._product_repo.get_by_sku("BGT-001")
+    assert product is not None
+
+    for external_url in (
+        "https://cdn.example.com/product.png",
+        "http://127.0.0.1:8000/internal.png",
+        "http://[::1",
+    ):
+        product.images = [external_url]
+        await product.save()
+        assert await uc._resolve_product_image(product.sku, for_pdf=True) is None
+        assert uc._resolve_branding_asset(external_url, for_pdf=True) is None

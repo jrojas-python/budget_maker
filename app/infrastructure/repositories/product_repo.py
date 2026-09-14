@@ -53,14 +53,48 @@ class ProductRepository(BaseRepository):
         await product.set(data)
         return product
 
-    async def add_image(self, doc_id: str, filename: str) -> Product | None:
+    async def add_image(
+        self,
+        doc_id: str,
+        filename: str,
+        max_items: int | None = None,
+    ) -> Product | None:
+        """Agrega una referencia sin sobrescribir cambios concurrentes."""
         oid = PydanticObjectId(doc_id)
-        await Product.find_one(Product.id == oid).update({"$push": {"images": filename}})
+        query: dict[str, Any] = {"_id": oid}
+        if max_items is not None:
+            query["$expr"] = {
+                "$lt": [
+                    {"$size": {"$ifNull": ["$images", []]}},
+                    max_items,
+                ]
+            }
+        result = await Product.get_motor_collection().update_one(
+            query,
+            {"$addToSet": {"images": filename}, "$unset": {"image_filename": ""}},
+        )
+        if result.matched_count == 0:
+            return None
         return await self.get_by_id(doc_id)
 
     async def remove_image(self, doc_id: str, filename: str) -> Product | None:
+        """Retira una referencia sin reemplazar la lista completa."""
         oid = PydanticObjectId(doc_id)
-        await Product.find_one(Product.id == oid).update({"$pull": {"images": filename}})
+        await Product.find_one(Product.id == oid).update(
+            {"$pull": {"images": filename}},
+        )
+        product = await self.get_by_id(doc_id)
+        if product and product.image_filename == filename:
+            await product.set({"image_filename": None})
+            return await self.get_by_id(doc_id)
+        return product
+
+    async def restore_image(self, doc_id: str, filename: str) -> Product | None:
+        """Restaura una referencia tras fallar la eliminación física."""
+        oid = PydanticObjectId(doc_id)
+        await Product.find_one(Product.id == oid).update(
+            {"$addToSet": {"images": filename}}
+        )
         return await self.get_by_id(doc_id)
 
     async def delete(self, doc_id: str) -> bool:

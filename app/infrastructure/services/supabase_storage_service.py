@@ -37,7 +37,11 @@ class StorageServiceProtocol(Protocol):
         content_type: str,
     ) -> str: ...
 
-    async def delete_product_image(self, reference: str) -> None: ...
+    async def delete_product_image(
+        self,
+        reference: str,
+        expected_product_id: str | None = None,
+    ) -> None: ...
 
     async def upload_branding_asset(
         self,
@@ -48,7 +52,11 @@ class StorageServiceProtocol(Protocol):
         content_type: str,
     ) -> str: ...
 
-    async def delete_branding_asset(self, reference: str) -> None: ...
+    async def delete_branding_asset(
+        self,
+        reference: str,
+        expected_key: str | None = None,
+    ) -> None: ...
 
     def is_product_public_url(self, reference: str) -> bool: ...
 
@@ -81,12 +89,20 @@ class SupabaseStorageService:
             upsert=False,
         )
 
-    async def delete_product_image(self, reference: str) -> None:
+    async def delete_product_image(
+        self,
+        reference: str,
+        expected_product_id: str | None = None,
+    ) -> None:
         """Elimina una imagen pública del bucket de productos."""
         object_path = self._extract_public_object_path(
             reference,
             bucket_name=self._settings.supabase_products_bucket,
         )
+        if expected_product_id and not object_path.startswith(f"{expected_product_id}/"):
+            raise SupabaseStorageReferenceError(
+                "La imagen remota no pertenece al producto indicado."
+            )
         await self._delete_object(self._settings.supabase_products_bucket, object_path)
 
     async def upload_branding_asset(
@@ -99,7 +115,9 @@ class SupabaseStorageService:
     ) -> str:
         """Sube logo o favicon a la carpeta pública de branding."""
         ext = _normalize_extension(original_filename)
-        object_path = f"{self._settings.supabase_branding_prefix}/{key}{ext}"
+        object_path = (
+            f"{self._settings.supabase_branding_prefix}/{key}-{uuid4().hex}{ext}"
+        )
         return await self._upload_object(
             bucket_name=self._settings.supabase_media_bucket,
             object_path=object_path,
@@ -108,13 +126,26 @@ class SupabaseStorageService:
             upsert=True,
         )
 
-    async def delete_branding_asset(self, reference: str) -> None:
+    async def delete_branding_asset(
+        self,
+        reference: str,
+        expected_key: str | None = None,
+    ) -> None:
         """Elimina un asset público del bucket de media/branding."""
         object_path = self._extract_public_object_path(
             reference,
             bucket_name=self._settings.supabase_media_bucket,
             expected_prefix=self._settings.supabase_branding_prefix,
         )
+        if expected_key:
+            filename = PurePosixPath(object_path).name
+            if not (
+                filename.startswith(f"{expected_key}-")
+                or filename.startswith(f"{expected_key}.")
+            ):
+                raise SupabaseStorageReferenceError(
+                    "El asset remoto no pertenece a la clave de branding indicada."
+                )
         await self._delete_object(self._settings.supabase_media_bucket, object_path)
 
     def is_product_public_url(self, reference: str) -> bool:
@@ -143,13 +174,15 @@ class SupabaseStorageService:
     ) -> str:
         client = await self._get_client()
         normalized_path = self._validate_object_path(object_path)
+        bucket = client.storage.from_(bucket_name)
+        uploaded = False
         try:
-            bucket = client.storage.from_(bucket_name)
             await bucket.upload(
                 normalized_path,
                 content,
                 {"content-type": content_type, "upsert": "true" if upsert else "false"},
             )
+            uploaded = True
             public_candidate = bucket.get_public_url(normalized_path)
             if inspect.isawaitable(public_candidate):
                 public_candidate = await public_candidate
@@ -161,6 +194,18 @@ class SupabaseStorageService:
             )
             return public_url
         except Exception as exc:
+            if uploaded:
+                try:
+                    await bucket.remove([normalized_path])
+                except Exception as cleanup_exc:
+                    logger.warning(
+                        "[supabase_storage] rollback de upload falló "
+                        "| bucket=%s object_path=%s exc=%s",
+                        bucket_name,
+                        normalized_path,
+                        cleanup_exc,
+                        exc_info=True,
+                    )
             logger.warning(
                 "[supabase_storage] fallo subiendo objeto | bucket=%s object_path=%s exc=%s",
                 bucket_name,
@@ -234,12 +279,22 @@ class SupabaseStorageService:
         bucket_name: str,
         expected_prefix: str | None = None,
     ) -> str:
-        parsed = urlsplit(reference.strip())
+        try:
+            parsed = urlsplit(reference.strip())
+            parsed_port = parsed.port
+        except ValueError as exc:
+            raise SupabaseStorageReferenceError(
+                "La referencia remota no es una URL pública válida."
+            ) from exc
         if parsed.scheme.lower() not in {"http", "https"} or not parsed.hostname:
             raise SupabaseStorageReferenceError("La referencia remota no es una URL pública válida.")
 
         configured = urlsplit(self._settings.supabase_url)
-        if parsed.hostname.lower() != (configured.hostname or "").lower():
+        if (
+            parsed.scheme.lower() != configured.scheme.lower()
+            or parsed.hostname.lower() != (configured.hostname or "").lower()
+            or parsed_port != configured.port
+        ):
             raise SupabaseStorageReferenceError(
                 "La referencia remota no pertenece al proyecto Supabase configurado."
             )
@@ -271,17 +326,37 @@ class SupabaseStorageService:
             return None
 
     def _extract_public_url(self, candidate: Any, bucket_name: str, object_path: str) -> str:
+        public_url = ""
         if isinstance(candidate, str) and candidate:
-            return candidate
-        if isinstance(candidate, dict):
+            public_url = candidate
+        elif isinstance(candidate, dict):
             for key in ("publicURL", "publicUrl", "public_url"):
                 value = candidate.get(key)
                 if isinstance(value, str) and value:
-                    return value
-        for attribute in ("publicURL", "publicUrl", "public_url"):
-            value = getattr(candidate, attribute, None)
-            if isinstance(value, str) and value:
-                return value
+                    public_url = value
+                    break
+        else:
+            for attribute in ("publicURL", "publicUrl", "public_url"):
+                value = getattr(candidate, attribute, None)
+                if isinstance(value, str) and value:
+                    public_url = value
+                    break
+
+        if public_url:
+            try:
+                candidate_path = self._extract_public_object_path(
+                    public_url,
+                    bucket_name=bucket_name,
+                )
+                if candidate_path == object_path:
+                    return public_url
+            except SupabaseStorageReferenceError:
+                logger.warning(
+                    "[supabase_storage] URL pública no canónica; usando URL configurada "
+                    "| bucket=%s object_path=%s",
+                    bucket_name,
+                    object_path,
+                )
         return self._compose_public_url(bucket_name, object_path)
 
     def _compose_public_url(self, bucket_name: str, object_path: str) -> str:

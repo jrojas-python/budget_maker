@@ -79,4 +79,5 @@ def get_budget_use_cases() -> BudgetUseCases:
         product_repo=_product_repo,
         config_repo=_config_repo,
         pdf_service=_pdf_service,
+        image_service=_image_service,
     )

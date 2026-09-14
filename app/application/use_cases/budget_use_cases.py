@@ -14,7 +14,7 @@ from app.infrastructure.repositories.budget_repo import BudgetRepository
 from app.infrastructure.repositories.config_repo import ConfigRepository
 from app.infrastructure.repositories.product_repo import ProductRepository
 from app.infrastructure.services.pdf_service import PdfService
-from settings.config import settings
+from app.infrastructure.services.image_service import ImageService
 
 
 class BudgetUseCases:
@@ -29,11 +29,13 @@ class BudgetUseCases:
         product_repo: ProductRepository,
         config_repo: ConfigRepository,
         pdf_service: PdfService,
+        image_service: ImageService,
     ) -> None:
         self._budget_repo = budget_repo
         self._product_repo = product_repo
         self._config_repo = config_repo
         self._pdf = pdf_service
+        self._image = image_service
 
     async def create_budget(self, data: BudgetCreate) -> Budget:
         """Crea un presupuesto congelando montos como snapshot inmutable."""
@@ -221,13 +223,13 @@ class BudgetUseCases:
     def _resolve_branding_asset(self, value: str, for_pdf: bool) -> str | None:
         if not value:
             return None
-        if self._is_public_http_url(value) or value.startswith("file://"):
+        if self._image.is_branding_public_url(value) or value.startswith("file://"):
             return value
         if value.startswith("/uploads/branding/"):
             if not for_pdf:
                 return value
             filename = Path(value).name
-            file_path = Path(settings.branding_dir) / filename
+            file_path = self._image.legacy_branding_path(filename)
             if file_path.exists():
                 return file_path.resolve().as_uri()
             return None
@@ -259,7 +261,7 @@ class BudgetUseCases:
             return None
 
         for reference in self._get_stored_images(product.images, product.image_filename):
-            if self._is_public_http_url(reference):
+            if self._image.is_product_public_url(reference):
                 return reference
             if reference.startswith("/uploads/products/"):
                 if not for_pdf:
@@ -272,7 +274,7 @@ class BudgetUseCases:
 
             if not filename:
                 continue
-            file_path = Path(settings.upload_dir) / filename
+            file_path = self._image.legacy_product_path(filename)
             if file_path.exists():
                 return file_path.resolve().as_uri()
         return None
@@ -288,7 +290,3 @@ class BudgetUseCases:
             if normalized and normalized not in references:
                 references.append(normalized)
         return references
-
-    def _is_public_http_url(self, value: str) -> bool:
-        parsed = urllib.parse.urlsplit(value)
-        return parsed.scheme.lower() in {"http", "https"} and bool(parsed.netloc)

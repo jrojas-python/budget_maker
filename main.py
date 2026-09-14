@@ -8,7 +8,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
+from app.api import dependencies
 from app.api.dependencies import get_auth_use_cases, get_config_use_cases
+from app.application.use_cases.budget_use_cases import BudgetUseCases
+from app.application.use_cases.config_use_cases import ConfigUseCases
+from app.application.use_cases.product_use_cases import ProductUseCases
 from app.api.v1.auth import router as auth_router
 from app.api.v1.budgets import router as budgets_router
 from app.api.v1.categories import router as categories_router
@@ -16,6 +20,8 @@ from app.api.v1.config import router as config_router
 from app.api.v1.products import router as products_router
 from app.api.v1.users import router as users_router
 from app.database import close_db, init_db
+from app.infrastructure.services.image_service import ImageService
+from app.infrastructure.services.supabase_storage_service import SupabaseStorageService
 from settings.config import Settings, settings
 from web.views import router as web_router
 
@@ -27,7 +33,8 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     await init_db()
     try:
-        config_uc = get_config_use_cases()
+        config_factory = getattr(app.state, "get_config_use_cases", get_config_use_cases)
+        config_uc = config_factory()
         await config_uc.seed_defaults()
         auth_uc = get_auth_use_cases()
         await auth_uc.seed_superadmin()
@@ -50,6 +57,48 @@ def create_app(app_settings: Settings) -> FastAPI:
         version="0.2.0",
         lifespan=lifespan,
     )
+    application.state.app_settings = app_settings
+
+    if app_settings is not settings:
+        storage_service = SupabaseStorageService(app_settings)
+        image_service = ImageService(
+            storage_service=storage_service,
+            app_settings=app_settings,
+        )
+
+        def get_scoped_config_use_cases() -> ConfigUseCases:
+            return ConfigUseCases(
+                repo=dependencies._config_repo,
+                image_service=image_service,
+            )
+
+        def get_scoped_product_use_cases() -> ProductUseCases:
+            return ProductUseCases(
+                repo=dependencies._product_repo,
+                excel_service=dependencies._excel_service,
+                image_service=image_service,
+                category_repo=dependencies._category_repo,
+            )
+
+        def get_scoped_budget_use_cases() -> BudgetUseCases:
+            return BudgetUseCases(
+                budget_repo=dependencies._budget_repo,
+                product_repo=dependencies._product_repo,
+                config_repo=dependencies._config_repo,
+                pdf_service=dependencies._pdf_service,
+                image_service=image_service,
+            )
+
+        application.state.get_config_use_cases = get_scoped_config_use_cases
+        application.dependency_overrides[dependencies.get_config_use_cases] = (
+            get_scoped_config_use_cases
+        )
+        application.dependency_overrides[dependencies.get_product_use_cases] = (
+            get_scoped_product_use_cases
+        )
+        application.dependency_overrides[dependencies.get_budget_use_cases] = (
+            get_scoped_budget_use_cases
+        )
 
     application.add_middleware(
         CORSMiddleware,

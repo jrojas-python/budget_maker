@@ -51,6 +51,51 @@ def test_settings_load_mongo_environment_aliases(monkeypatch: pytest.MonkeyPatch
     assert configured_settings.test_mongo_uri.startswith("mongodb://")
 
 
+def test_settings_accepts_two_character_storage_bucket_names():
+    configured_settings = Settings(
+        _env_file=None,
+        supabase_products_bucket="p1",
+        supabase_media_bucket="m1",
+    )
+
+    assert configured_settings.supabase_products_bucket == "p1"
+    assert configured_settings.supabase_media_bucket == "m1"
+
+
+@pytest.mark.parametrize("max_image_size_mb", [0, 3])
+def test_settings_rejects_image_limits_outside_storage_bucket_limit(
+    max_image_size_mb: int,
+):
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, max_image_size_mb=max_image_size_mb)
+
+
+def test_settings_strips_supabase_secret_whitespace():
+    configured_settings = Settings(
+        _env_file=None,
+        supabase_secret_key="  backend-secret  ",
+    )
+
+    assert configured_settings.supabase_secret_key == "backend-secret"
+
+
+def test_settings_rejects_insecure_remote_supabase_url():
+    with pytest.raises(ValidationError, match="requiere HTTPS"):
+        Settings(
+            _env_file=None,
+            supabase_url="http://project.supabase.co",
+        )
+
+
+def test_settings_allows_http_for_local_supabase():
+    configured_settings = Settings(
+        _env_file=None,
+        supabase_url="http://127.0.0.1:54321",
+    )
+
+    assert configured_settings.supabase_url == "http://127.0.0.1:54321"
+
+
 @pytest.mark.parametrize(
     ("unsafe_uri", "expected_error"),
     [

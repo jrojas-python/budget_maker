@@ -6,7 +6,7 @@ from fastapi import UploadFile
 
 from app.domain.models.global_config import GlobalConfig
 from app.infrastructure.repositories.config_repo import ConfigRepository
-from app.infrastructure.services.image_service import ImageService
+from app.infrastructure.services.image_service import ImageReferenceError, ImageService
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +32,13 @@ class ConfigUseCases:
         value: ConfigValue,
         description: str | None = None,
     ) -> dict[str, ConfigValue | str]:
+        if key in {"site_logo", "site_icon"}:
+            reference = str(value).strip()
+            if reference and not self._image.is_managed_branding_reference(key, reference):
+                raise ImageReferenceError(
+                    "El branding debe gestionarse mediante los endpoints de carga.",
+                    422,
+                )
         return await self._repo.set_value(key, value, description or "")
 
     async def get_global_config(self) -> GlobalConfig:
@@ -97,9 +104,13 @@ class ConfigUseCases:
             await self._safe_delete_branding(new_url)
             raise
 
-        if previous_value and previous_value != new_url:
+        if (
+            previous_value
+            and previous_value != new_url
+            and self._image.is_managed_branding_reference(key, previous_value)
+        ):
             try:
-                await self._image.delete_branding_image(previous_value)
+                await self._image.delete_branding_image(previous_value, key)
             except Exception as exc:
                 logger.warning(
                     "[config_use_cases] fallo limpiando branding previo | key=%s exc=%s",
@@ -128,7 +139,8 @@ class ConfigUseCases:
             return cleared
 
         try:
-            await self._image.delete_branding_image(previous_value)
+            if self._image.is_managed_branding_reference(key, previous_value):
+                await self._image.delete_branding_image(previous_value, key)
         except Exception as exc:
             logger.warning(
                 "[config_use_cases] fallo eliminando branding | key=%s exc=%s",

@@ -60,7 +60,15 @@ class FakeSupabaseStorageService:
         self.objects[(self.products_bucket, object_path)] = content
         return self._public_url(self.products_bucket, object_path)
 
-    async def delete_product_image(self, reference: str) -> None:
+    async def delete_product_image(
+        self,
+        reference: str,
+        expected_product_id: str | None = None,
+    ) -> None:
+        if expected_product_id:
+            _, object_path = self._extract(reference, expected_bucket=self.products_bucket)
+            if not object_path.startswith(f"{expected_product_id}/"):
+                raise SupabaseStorageReferenceError("Producto fake inesperado")
         await self._delete_reference(reference, expected_bucket=self.products_bucket)
 
     async def upload_branding_asset(
@@ -74,11 +82,27 @@ class FakeSupabaseStorageService:
         if self.fail_branding_upload:
             raise SupabaseStorageOperationError("Fallo fake subiendo branding")
         ext = self._extension_from_filename(original_filename)
-        object_path = f"{self.branding_prefix}/{key}{ext}"
+        object_path = f"{self.branding_prefix}/{key}-{uuid4().hex}{ext}"
         self.objects[(self.media_bucket, object_path)] = content
         return self._public_url(self.media_bucket, object_path)
 
-    async def delete_branding_asset(self, reference: str) -> None:
+    async def delete_branding_asset(
+        self,
+        reference: str,
+        expected_key: str | None = None,
+    ) -> None:
+        if expected_key:
+            _, object_path = self._extract(
+                reference,
+                expected_bucket=self.media_bucket,
+                expected_prefix=self.branding_prefix,
+            )
+            filename = object_path.rsplit("/", maxsplit=1)[-1]
+            if not (
+                filename.startswith(f"{expected_key}-")
+                or filename.startswith(f"{expected_key}.")
+            ):
+                raise SupabaseStorageReferenceError("Clave fake inesperada")
         await self._delete_reference(
             reference,
             expected_bucket=self.media_bucket,
@@ -170,7 +194,7 @@ class FakeSupabaseStorageService:
                 expected_bucket=expected_bucket,
                 expected_prefix=expected_prefix,
             )
-        except SupabaseStorageReferenceError:
+        except (SupabaseStorageReferenceError, ValueError):
             return None
 
     def _public_url(self, bucket_name: str, object_path: str) -> str:

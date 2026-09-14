@@ -97,7 +97,11 @@ class ImageService:
             content_type=upload.content_type,
         )
 
-    async def delete_product_image(self, reference: str) -> None:
+    async def delete_product_image(
+        self,
+        reference: str,
+        product_id: str | None = None,
+    ) -> None:
         """Elimina una referencia de producto en Storage o en disco legacy."""
         normalized_reference = reference.strip()
         if self._is_http_url(normalized_reference):
@@ -106,12 +110,19 @@ class ImageService:
                     "La imagen remota no pertenece al Storage configurado.",
                     422,
                 )
-            await self._storage.delete_product_image(normalized_reference)
+            await self._storage.delete_product_image(
+                normalized_reference,
+                expected_product_id=product_id,
+            )
             return
 
         self._delete_legacy_asset(normalized_reference, Path(self._settings.upload_dir), "producto")
 
-    async def delete_branding_image(self, reference: str) -> None:
+    async def delete_branding_image(
+        self,
+        reference: str,
+        key: str | None = None,
+    ) -> None:
         """Elimina una referencia de branding en Storage o en disco legacy."""
         normalized_reference = reference.strip()
         if self._is_http_url(normalized_reference):
@@ -120,10 +131,43 @@ class ImageService:
                     "El branding remoto no pertenece al Storage configurado.",
                     422,
                 )
-            await self._storage.delete_branding_asset(normalized_reference)
+            await self._storage.delete_branding_asset(
+                normalized_reference,
+                expected_key=key,
+            )
             return
 
         self._delete_legacy_asset(normalized_reference, Path(self._settings.branding_dir), "branding")
+
+    def is_product_public_url(self, reference: str) -> bool:
+        """Indica si una URL pertenece al bucket público de productos."""
+        return self._storage.is_product_public_url(reference)
+
+    def is_branding_public_url(self, reference: str) -> bool:
+        """Indica si una URL pertenece al prefijo público de branding."""
+        return self._storage.is_branding_public_url(reference)
+
+    def is_managed_branding_reference(self, key: str, reference: str) -> bool:
+        """Indica si una referencia de branding pertenece a la clave esperada."""
+        normalized_reference = reference.strip()
+        if not normalized_reference:
+            return False
+        basename = self.get_reference_basename(normalized_reference)
+        if self._is_http_url(normalized_reference):
+            key_matches = basename.startswith(f"{key}-") or basename.startswith(f"{key}.")
+            return key_matches and self._storage.is_branding_public_url(normalized_reference)
+        return (
+            normalized_reference.startswith("/uploads/branding/")
+            or Path(normalized_reference).parent in {Path("."), Path(self._settings.branding_dir)}
+        )
+
+    def legacy_product_path(self, reference: str) -> Path:
+        """Resuelve una referencia legacy dentro del directorio de productos."""
+        return Path(self._settings.upload_dir) / self.get_reference_basename(reference)
+
+    def legacy_branding_path(self, reference: str) -> Path:
+        """Resuelve una referencia legacy dentro del directorio de branding."""
+        return Path(self._settings.branding_dir) / self.get_reference_basename(reference)
 
     async def validate_product_image(self, file: UploadFile) -> ValidatedImageUpload:
         """Valida un upload de producto con límites de formato y tamaño."""
@@ -168,7 +212,8 @@ class ImageService:
         urls: list[str] = []
         for reference in self.collect_product_references(images, legacy_image_filename):
             if self._is_http_url(reference):
-                urls.append(reference)
+                if self._storage.is_product_public_url(reference):
+                    urls.append(reference)
                 continue
             if reference.startswith("/uploads/products/"):
                 urls.append(f"{root_url}{reference}")
@@ -249,12 +294,19 @@ class ImageService:
             )
 
         max_bytes = self._settings.max_image_size_mb * 1024 * 1024
-        content = await file.read()
-        if len(content) > max_bytes:
-            raise ImageValidationError(
-                f"Archivo excede {self._settings.max_image_size_mb}MB",
-                422,
-            )
+        chunks: list[bytes] = []
+        total_bytes = 0
+        while chunk := await file.read(64 * 1024):
+            total_bytes += len(chunk)
+            if total_bytes > max_bytes:
+                raise ImageValidationError(
+                    f"Archivo excede {self._settings.max_image_size_mb}MB",
+                    422,
+                )
+            chunks.append(chunk)
+        content = b"".join(chunks)
+        if not content:
+            raise ImageValidationError("El archivo de imagen está vacío", 422)
 
         filename = file.filename or f"image{extension}"
         return ValidatedImageUpload(
@@ -280,6 +332,6 @@ class ImageService:
     def _is_http_url(self, value: str) -> bool:
         try:
             parsed = urlsplit(value)
-        except Exception:
+        except ValueError:
             return False
         return parsed.scheme.lower() in {"http", "https"} and bool(parsed.netloc)

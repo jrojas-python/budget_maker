@@ -204,7 +204,8 @@ async def test_upload_logo_explicit_endpoint_accepts_png_and_persists(
     assert res.status_code == 200
     body = res.json()
     assert body["key"] == "site_logo"
-    assert body["value"] == f"{_SUPABASE_BRANDING_PREFIX}site_logo.png"
+    assert body["value"].startswith(f"{_SUPABASE_BRANDING_PREFIX}site_logo-")
+    assert body["value"].endswith(".png")
     assert fake_storage_service.has_reference(body["value"])
 
 
@@ -222,7 +223,8 @@ async def test_upload_logo_explicit_endpoint_accepts_jpg(
     assert res.status_code == 200
     body = res.json()
     assert body["key"] == "site_logo"
-    assert body["value"] == f"{_SUPABASE_BRANDING_PREFIX}site_logo.jpg"
+    assert body["value"].startswith(f"{_SUPABASE_BRANDING_PREFIX}site_logo-")
+    assert body["value"].endswith(".jpg")
     assert fake_storage_service.has_reference(body["value"])
 
 
@@ -267,8 +269,43 @@ async def test_upload_branding_legacy_icon_endpoint_still_works(
     assert res.status_code == 200
     body = res.json()
     assert body["key"] == "site_icon"
-    assert body["value"] == f"{_SUPABASE_BRANDING_PREFIX}site_icon.webp"
+    assert body["value"].startswith(f"{_SUPABASE_BRANDING_PREFIX}site_icon-")
+    assert body["value"].endswith(".webp")
     assert fake_storage_service.has_reference(body["value"])
+
+
+@pytest.mark.asyncio
+async def test_upload_logo_returns_502_when_storage_fails(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    fake_storage_service: Any,
+):
+    fake_storage_service.fail_branding_upload = True
+
+    response = await client.post(
+        "/api/v1/config/logo",
+        files={"file": ("logo.png", b"fake-png-bytes", "image/png")},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 502
+    current = await client.get("/api/v1/config/site_logo")
+    assert current.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_generic_config_rejects_external_branding_url(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+):
+    response = await client.put(
+        "/api/v1/config/site_logo",
+        json={"value": "https://external.example/logo.png", "description": "Logo"},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 422
+    assert "endpoints de carga" in response.json()["detail"]
 
 
 @pytest.mark.asyncio
@@ -292,7 +329,8 @@ async def test_upload_logo_replaces_previous_extension_and_cleans_old_object(
     )
     assert res.status_code == 200
     body = res.json()
-    assert body["value"] == f"{_SUPABASE_BRANDING_PREFIX}site_logo.png"
+    assert body["value"].startswith(f"{_SUPABASE_BRANDING_PREFIX}site_logo-")
+    assert body["value"].endswith(".png")
     assert fake_storage_service.has_reference(body["value"])
     assert not fake_storage_service.has_reference(previous_url)
 
@@ -315,7 +353,9 @@ async def test_upload_logo_rolls_back_when_persistence_fails(
     original_set_value = dependencies_module._config_repo.set_value
 
     async def failing_set_value(key: str, value, description: str = ""):
-        if key == "site_logo" and value == f"{_SUPABASE_BRANDING_PREFIX}site_logo.png":
+        if key == "site_logo" and str(value).startswith(
+            f"{_SUPABASE_BRANDING_PREFIX}site_logo-"
+        ):
             raise RuntimeError("mongo config fail")
         return await original_set_value(key, value, description)
 
@@ -332,7 +372,46 @@ async def test_upload_logo_rolls_back_when_persistence_fails(
     assert current.status_code == 200
     assert current.json()["value"] == previous_url
     assert fake_storage_service.has_reference(previous_url)
-    assert not fake_storage_service.has_reference(f"{_SUPABASE_BRANDING_PREFIX}site_logo.png")
+    assert list(fake_storage_service.objects) == [
+        ("media", "branding/site_logo.jpg")
+    ]
+
+
+@pytest.mark.asyncio
+async def test_upload_logo_same_extension_preserves_previous_object_when_persistence_fails(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    fake_storage_service: Any,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    previous_url = fake_storage_service.store_branding_object(
+        "site_logo.png",
+        content=b"previous-logo",
+    )
+    await client.put(
+        "/api/v1/config/site_logo",
+        json={"value": previous_url, "description": "Logo previo"},
+        headers=auth_headers,
+    )
+    original_set_value = dependencies_module._config_repo.set_value
+
+    async def failing_set_value(key: str, value, description: str = ""):
+        if key == "site_logo" and value != previous_url:
+            raise RuntimeError("mongo config fail")
+        return await original_set_value(key, value, description)
+
+    monkeypatch.setattr(dependencies_module._config_repo, "set_value", failing_set_value)
+
+    with pytest.raises(RuntimeError, match="mongo config fail"):
+        await client.post(
+            "/api/v1/config/logo",
+            files={"file": ("logo.png", b"replacement-logo", "image/png")},
+            headers=auth_headers,
+        )
+
+    assert fake_storage_service.has_reference(previous_url)
+    assert fake_storage_service.objects[("media", "branding/site_logo.png")] == b"previous-logo"
+    assert len(fake_storage_service.objects) == 1
 
 
 @pytest.mark.asyncio
@@ -352,10 +431,10 @@ async def test_upload_logo_restores_previous_value_when_cleanup_of_old_asset_fai
 
     original_delete = dependencies_module._image_service.delete_branding_image
 
-    async def failing_previous_delete(reference: str) -> None:
+    async def failing_previous_delete(reference: str, key: str | None = None) -> None:
         if reference == previous_url:
             raise RuntimeError("cleanup previous failed")
-        await original_delete(reference)
+        await original_delete(reference, key)
 
     monkeypatch.setattr(
         dependencies_module._image_service,
@@ -374,7 +453,7 @@ async def test_upload_logo_restores_previous_value_when_cleanup_of_old_asset_fai
     assert current.status_code == 200
     assert current.json()["value"] == previous_url
     assert fake_storage_service.has_reference(previous_url)
-    assert not fake_storage_service.has_reference(f"{_SUPABASE_BRANDING_PREFIX}site_logo.png")
+    assert len(fake_storage_service.objects) == 1
 
 
 @pytest.mark.asyncio

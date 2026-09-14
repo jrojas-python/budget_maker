@@ -185,7 +185,7 @@ class ProductUseCases:
         if references:
             try:
                 for reference in references:
-                    await self._image.delete_product_image(reference)
+                    await self._image.delete_product_image(reference, product_id)
                     deleted_references.append(reference)
             except Exception as exc:
                 remaining_references = [
@@ -239,12 +239,15 @@ class ProductUseCases:
             raise ValueError("El producto ya tiene el máximo de 10 imágenes")
 
         image_url = await self._image.upload_product_image(product_id, file)
-        update_data = {"images": [*stored_references, image_url]}
-        if product.image_filename and product.image_filename not in product.images:
-            update_data["image_filename"] = None
 
         try:
-            updated_product = await self._repo.update(product_id, update_data)
+            if product.image_filename and product.image_filename not in product.images:
+                await self._repo.add_image(product_id, product.image_filename)
+            updated_product = await self._repo.add_image(
+                product_id,
+                image_url,
+                max_items=10,
+            )
         except Exception as exc:
             logger.warning(
                 "[product_use_cases] fallo persistiendo upload | product_id=%s exc=%s",
@@ -252,11 +255,14 @@ class ProductUseCases:
                 exc,
                 exc_info=True,
             )
-            await self._safe_delete_uploaded_image(image_url)
+            await self._safe_delete_uploaded_image(image_url, product_id)
             raise
 
         if not updated_product:
-            await self._safe_delete_uploaded_image(image_url)
+            await self._safe_delete_uploaded_image(image_url, product_id)
+            current_product = await self._repo.get_by_id(product_id)
+            if current_product:
+                raise ValueError("El producto ya tiene el máximo de 10 imágenes")
             raise ValueError("Producto no encontrado")
         return updated_product
 
@@ -271,25 +277,12 @@ class ProductUseCases:
             product.image_filename,
             filename,
         )
-        original_images = list(product.images)
-        original_legacy = product.image_filename
-        current_references = self._image.collect_product_references(
-            product.images,
-            product.image_filename,
-        )
-        updated_references = [
-            reference for reference in current_references if reference != target_reference
-        ]
-
-        updated_product = await self._repo.update(
-            product_id,
-            {"images": updated_references, "image_filename": None},
-        )
+        updated_product = await self._repo.remove_image(product_id, target_reference)
         if not updated_product:
             raise ValueError("Producto no encontrado")
 
         try:
-            await self._image.delete_product_image(target_reference)
+            await self._image.delete_product_image(target_reference, product_id)
         except Exception as exc:
             logger.warning(
                 "[product_use_cases] fallo borrando imagen | product_id=%s reference=%s exc=%s",
@@ -298,13 +291,13 @@ class ProductUseCases:
                 exc,
                 exc_info=True,
             )
-            await self._repo.update(
-                product_id,
-                {"images": original_images, "image_filename": original_legacy},
-            )
+            await self._repo.restore_image(product_id, target_reference)
             raise
 
-        return updated_product
+        refreshed_product = await self._repo.get_by_id(product_id)
+        if not refreshed_product:
+            raise ValueError("Producto no encontrado")
+        return refreshed_product
 
     async def search(
         self,
@@ -364,9 +357,9 @@ class ProductUseCases:
                 created += 1
         return {"created": created, "updated": updated, "total": created + updated}
 
-    async def _safe_delete_uploaded_image(self, image_url: str) -> None:
+    async def _safe_delete_uploaded_image(self, image_url: str, product_id: str) -> None:
         try:
-            await self._image.delete_product_image(image_url)
+            await self._image.delete_product_image(image_url, product_id)
         except Exception as exc:
             logger.warning(
                 "[product_use_cases] rollback remoto falló | image_url=%s exc=%s",
