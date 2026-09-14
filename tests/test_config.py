@@ -1,8 +1,12 @@
-import os
+from __future__ import annotations
+
 from pathlib import Path
+from typing import Any
 
 import pytest
 from httpx import AsyncClient
+
+from app.api import dependencies as dependencies_module
 from app.api.dependencies import get_auth_use_cases, get_config_use_cases
 from app.domain.models.budget import Budget
 from app.domain.models.category import Category
@@ -10,6 +14,10 @@ from app.domain.models.global_config import GlobalConfig
 from app.domain.models.product import Product
 from app.domain.models.user import User
 from settings.config import settings
+
+_SUPABASE_BRANDING_PREFIX = (
+    "https://fake-project.supabase.co/storage/v1/object/public/media/branding/"
+)
 
 
 @pytest.mark.asyncio
@@ -59,7 +67,7 @@ async def test_init_beanie_and_seeds_are_idempotent_on_empty_database(_init_db):
 
 
 @pytest.mark.asyncio
-async def test_update_global_config_valid_payload(client: AsyncClient, auth_headers: dict):
+async def test_update_global_config_valid_payload(client: AsyncClient, auth_headers: dict[str, str]):
     payload = {
         "tax_rate": 17.5,
         "link_ttl_minutes": 45,
@@ -79,7 +87,7 @@ async def test_update_global_config_valid_payload(client: AsyncClient, auth_head
 
 
 @pytest.mark.asyncio
-async def test_update_global_config_validation_error(client: AsyncClient, auth_headers: dict):
+async def test_update_global_config_validation_error(client: AsyncClient, auth_headers: dict[str, str]):
     res = await client.put(
         "/api/v1/config/global",
         json={"tax_rate": 120, "link_ttl_minutes": 0, "show_product_photos_in_pdf": True},
@@ -109,7 +117,7 @@ async def test_get_global_config_uses_legacy_values_when_typed_document_is_missi
 
 
 @pytest.mark.asyncio
-async def test_legacy_boolean_string_is_coerced_correctly(client: AsyncClient, auth_headers: dict):
+async def test_legacy_boolean_string_is_coerced_correctly(client: AsyncClient, auth_headers: dict[str, str]):
     res = await client.put(
         "/api/v1/config/show_product_photos_in_pdf",
         json={"value": "false", "description": "Bandera fotos"},
@@ -123,7 +131,7 @@ async def test_legacy_boolean_string_is_coerced_correctly(client: AsyncClient, a
 
 
 @pytest.mark.asyncio
-async def test_payment_methods_crud_happy_path(client: AsyncClient, auth_headers: dict):
+async def test_payment_methods_crud_happy_path(client: AsyncClient, auth_headers: dict[str, str]):
     initial = await client.get("/api/v1/config/payment-methods")
     assert initial.status_code == 200
     assert initial.json() == {"payment_methods": []}
@@ -146,7 +154,10 @@ async def test_payment_methods_crud_happy_path(client: AsyncClient, auth_headers
 
 
 @pytest.mark.asyncio
-async def test_payment_method_duplicate_or_empty_returns_422(client: AsyncClient, auth_headers: dict):
+async def test_payment_method_duplicate_or_empty_returns_422(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+):
     created = await client.post(
         "/api/v1/config/payment-methods",
         json={"name": "Efectivo"},
@@ -174,80 +185,57 @@ async def test_payment_method_duplicate_or_empty_returns_422(client: AsyncClient
 
 
 @pytest.mark.asyncio
-async def test_remove_payment_method_not_found_returns_404(client: AsyncClient, auth_headers: dict):
+async def test_remove_payment_method_not_found_returns_404(client: AsyncClient, auth_headers: dict[str, str]):
     res = await client.delete("/api/v1/config/payment-methods/no-existe", headers=auth_headers)
     assert res.status_code == 404
 
 
 @pytest.mark.asyncio
-async def test_upload_logo_explicit_endpoint_accepts_png_and_persists(client: AsyncClient, auth_headers: dict):
-    test_branding_dir = Path("uploads/branding-tests")
-    test_branding_dir.mkdir(parents=True, exist_ok=True)
-    previous_branding_dir = os.environ.get("BRANDING_DIR")
-    os.environ["BRANDING_DIR"] = str(test_branding_dir)
-    logo_file = test_branding_dir / "site_logo.png"
-    if logo_file.exists():
-        logo_file.unlink()
-
-    try:
-        res = await client.post(
-            "/api/v1/config/logo",
-            files={"file": ("logo.png", b"fake-png-bytes", "image/png")},
-            headers=auth_headers,
-        )
-        assert res.status_code == 200
-        body = res.json()
-        assert body["key"] == "site_logo"
-        assert body["value"] == "/uploads/branding/site_logo.png"
-        assert logo_file.exists()
-    finally:
-        if previous_branding_dir is None:
-            os.environ.pop("BRANDING_DIR", None)
-        else:
-            os.environ["BRANDING_DIR"] = previous_branding_dir
-        if logo_file.exists():
-            logo_file.unlink()
-        if test_branding_dir.exists() and not any(test_branding_dir.iterdir()):
-            test_branding_dir.rmdir()
+async def test_upload_logo_explicit_endpoint_accepts_png_and_persists(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    fake_storage_service: Any,
+):
+    res = await client.post(
+        "/api/v1/config/logo",
+        files={"file": ("logo.png", b"fake-png-bytes", "image/png")},
+        headers=auth_headers,
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["key"] == "site_logo"
+    assert body["value"] == f"{_SUPABASE_BRANDING_PREFIX}site_logo.png"
+    assert fake_storage_service.has_reference(body["value"])
 
 
 @pytest.mark.asyncio
-async def test_upload_logo_explicit_endpoint_accepts_jpg(client: AsyncClient, auth_headers: dict):
-    test_branding_dir = Path("uploads/branding-tests")
-    test_branding_dir.mkdir(parents=True, exist_ok=True)
-    previous_branding_dir = os.environ.get("BRANDING_DIR")
-    os.environ["BRANDING_DIR"] = str(test_branding_dir)
-    logo_file = test_branding_dir / "site_logo.jpg"
-    if logo_file.exists():
-        logo_file.unlink()
-
-    try:
-        res = await client.post(
-            "/api/v1/config/logo",
-            files={"file": ("logo.jpg", b"fake-jpg-bytes", "image/jpg")},
-            headers=auth_headers,
-        )
-        assert res.status_code == 200
-        body = res.json()
-        assert body["key"] == "site_logo"
-        assert body["value"] == "/uploads/branding/site_logo.jpg"
-        assert logo_file.exists()
-    finally:
-        if previous_branding_dir is None:
-            os.environ.pop("BRANDING_DIR", None)
-        else:
-            os.environ["BRANDING_DIR"] = previous_branding_dir
-        if logo_file.exists():
-            logo_file.unlink()
-        if test_branding_dir.exists() and not any(test_branding_dir.iterdir()):
-            test_branding_dir.rmdir()
+async def test_upload_logo_explicit_endpoint_accepts_jpg(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    fake_storage_service: Any,
+):
+    res = await client.post(
+        "/api/v1/config/logo",
+        files={"file": ("logo.jpg", b"fake-jpg-bytes", "image/jpg")},
+        headers=auth_headers,
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["key"] == "site_logo"
+    assert body["value"] == f"{_SUPABASE_BRANDING_PREFIX}site_logo.jpg"
+    assert fake_storage_service.has_reference(body["value"])
 
 
 @pytest.mark.asyncio
-async def test_upload_logo_invalid_format_returns_400_and_keeps_previous_value(client: AsyncClient, auth_headers: dict):
+async def test_upload_logo_invalid_format_returns_400_and_keeps_previous_value(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    fake_storage_service: Any,
+):
+    previous_url = fake_storage_service.store_branding_object("site_logo.png")
     seed = await client.put(
         "/api/v1/config/site_logo",
-        json={"value": "/uploads/branding/site_logo.png", "description": "Logo"},
+        json={"value": previous_url, "description": "Logo"},
         headers=auth_headers,
     )
     assert seed.status_code == 200
@@ -261,36 +249,201 @@ async def test_upload_logo_invalid_format_returns_400_and_keeps_previous_value(c
 
     current = await client.get("/api/v1/config/site_logo")
     assert current.status_code == 200
-    assert current.json()["value"] == "/uploads/branding/site_logo.png"
+    assert current.json()["value"] == previous_url
+    assert fake_storage_service.has_reference(previous_url)
 
 
 @pytest.mark.asyncio
-async def test_upload_branding_legacy_icon_endpoint_still_works(client: AsyncClient, auth_headers: dict):
-    test_branding_dir = Path("uploads/branding-tests")
-    test_branding_dir.mkdir(parents=True, exist_ok=True)
-    previous_branding_dir = os.environ.get("BRANDING_DIR")
-    os.environ["BRANDING_DIR"] = str(test_branding_dir)
-    icon_file = test_branding_dir / "site_icon.webp"
-    if icon_file.exists():
-        icon_file.unlink()
+async def test_upload_branding_legacy_icon_endpoint_still_works(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    fake_storage_service: Any,
+):
+    res = await client.post(
+        "/api/v1/config/branding/site_icon",
+        files={"file": ("icon.webp", b"fake-webp-bytes", "image/webp")},
+        headers=auth_headers,
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["key"] == "site_icon"
+    assert body["value"] == f"{_SUPABASE_BRANDING_PREFIX}site_icon.webp"
+    assert fake_storage_service.has_reference(body["value"])
 
-    try:
-        res = await client.post(
-            "/api/v1/config/branding/site_icon",
-            files={"file": ("icon.webp", b"fake-webp-bytes", "image/webp")},
+
+@pytest.mark.asyncio
+async def test_upload_logo_replaces_previous_extension_and_cleans_old_object(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    fake_storage_service: Any,
+):
+    previous_url = fake_storage_service.store_branding_object("site_logo.jpg")
+    seed = await client.put(
+        "/api/v1/config/site_logo",
+        json={"value": previous_url, "description": "Logo previo"},
+        headers=auth_headers,
+    )
+    assert seed.status_code == 200
+
+    res = await client.post(
+        "/api/v1/config/logo",
+        files={"file": ("logo.png", b"new-logo", "image/png")},
+        headers=auth_headers,
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["value"] == f"{_SUPABASE_BRANDING_PREFIX}site_logo.png"
+    assert fake_storage_service.has_reference(body["value"])
+    assert not fake_storage_service.has_reference(previous_url)
+
+
+@pytest.mark.asyncio
+async def test_upload_logo_rolls_back_when_persistence_fails(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    fake_storage_service: Any,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    previous_url = fake_storage_service.store_branding_object("site_logo.jpg")
+    seed = await client.put(
+        "/api/v1/config/site_logo",
+        json={"value": previous_url, "description": "Logo previo"},
+        headers=auth_headers,
+    )
+    assert seed.status_code == 200
+
+    original_set_value = dependencies_module._config_repo.set_value
+
+    async def failing_set_value(key: str, value, description: str = ""):
+        if key == "site_logo" and value == f"{_SUPABASE_BRANDING_PREFIX}site_logo.png":
+            raise RuntimeError("mongo config fail")
+        return await original_set_value(key, value, description)
+
+    monkeypatch.setattr(dependencies_module._config_repo, "set_value", failing_set_value)
+
+    with pytest.raises(RuntimeError, match="mongo config fail"):
+        await client.post(
+            "/api/v1/config/logo",
+            files={"file": ("logo.png", b"new-logo", "image/png")},
             headers=auth_headers,
         )
+
+    current = await client.get("/api/v1/config/site_logo")
+    assert current.status_code == 200
+    assert current.json()["value"] == previous_url
+    assert fake_storage_service.has_reference(previous_url)
+    assert not fake_storage_service.has_reference(f"{_SUPABASE_BRANDING_PREFIX}site_logo.png")
+
+
+@pytest.mark.asyncio
+async def test_upload_logo_restores_previous_value_when_cleanup_of_old_asset_fails(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    fake_storage_service: Any,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    previous_url = fake_storage_service.store_branding_object("site_logo.jpg")
+    seed = await client.put(
+        "/api/v1/config/site_logo",
+        json={"value": previous_url, "description": "Logo previo"},
+        headers=auth_headers,
+    )
+    assert seed.status_code == 200
+
+    original_delete = dependencies_module._image_service.delete_branding_image
+
+    async def failing_previous_delete(reference: str) -> None:
+        if reference == previous_url:
+            raise RuntimeError("cleanup previous failed")
+        await original_delete(reference)
+
+    monkeypatch.setattr(
+        dependencies_module._image_service,
+        "delete_branding_image",
+        failing_previous_delete,
+    )
+
+    with pytest.raises(RuntimeError, match="cleanup previous failed"):
+        await client.post(
+            "/api/v1/config/logo",
+            files={"file": ("logo.png", b"new-logo", "image/png")},
+            headers=auth_headers,
+        )
+
+    current = await client.get("/api/v1/config/site_logo")
+    assert current.status_code == 200
+    assert current.json()["value"] == previous_url
+    assert fake_storage_service.has_reference(previous_url)
+    assert not fake_storage_service.has_reference(f"{_SUPABASE_BRANDING_PREFIX}site_logo.png")
+
+
+@pytest.mark.asyncio
+async def test_delete_branding_remote_clears_config_and_deletes_object(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    fake_storage_service: Any,
+):
+    previous_url = fake_storage_service.store_branding_object("site_logo.png")
+    seed = await client.put(
+        "/api/v1/config/site_logo",
+        json={"value": previous_url, "description": "Logo remoto"},
+        headers=auth_headers,
+    )
+    assert seed.status_code == 200
+
+    res = await client.delete("/api/v1/config/branding/site_logo", headers=auth_headers)
+    assert res.status_code == 200
+    assert res.json()["value"] == ""
+    assert not fake_storage_service.has_reference(previous_url)
+
+
+@pytest.mark.asyncio
+async def test_delete_branding_legacy_path_removes_local_file_and_clears_value(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+):
+    legacy_filename = "legacy-site-logo-test.png"
+    legacy_path = Path(settings.branding_dir) / legacy_filename
+    legacy_path.parent.mkdir(parents=True, exist_ok=True)
+    legacy_path.write_bytes(b"legacy-logo")
+
+    seed = await client.put(
+        "/api/v1/config/site_logo",
+        json={"value": f"/uploads/branding/{legacy_filename}", "description": "Logo legacy"},
+        headers=auth_headers,
+    )
+    assert seed.status_code == 200
+
+    try:
+        res = await client.delete("/api/v1/config/branding/site_logo", headers=auth_headers)
         assert res.status_code == 200
-        body = res.json()
-        assert body["key"] == "site_icon"
-        assert body["value"] == "/uploads/branding/site_icon.webp"
-        assert icon_file.exists()
+        assert res.json()["value"] == ""
+        assert not legacy_path.exists()
     finally:
-        if previous_branding_dir is None:
-            os.environ.pop("BRANDING_DIR", None)
-        else:
-            os.environ["BRANDING_DIR"] = previous_branding_dir
-        if icon_file.exists():
-            icon_file.unlink()
-        if test_branding_dir.exists() and not any(test_branding_dir.iterdir()):
-            test_branding_dir.rmdir()
+        if legacy_path.exists():
+            legacy_path.unlink()
+
+
+@pytest.mark.asyncio
+async def test_delete_branding_restores_value_when_remote_delete_fails(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    fake_storage_service: Any,
+):
+    previous_url = fake_storage_service.store_branding_object("site_logo.png")
+    fake_storage_service.fail_delete_references.add(previous_url)
+
+    seed = await client.put(
+        "/api/v1/config/site_logo",
+        json={"value": previous_url, "description": "Logo remoto"},
+        headers=auth_headers,
+    )
+    assert seed.status_code == 200
+
+    res = await client.delete("/api/v1/config/branding/site_logo", headers=auth_headers)
+    assert res.status_code == 502
+
+    current = await client.get("/api/v1/config/site_logo")
+    assert current.status_code == 200
+    assert current.json()["value"] == previous_url
+    assert fake_storage_service.has_reference(previous_url)

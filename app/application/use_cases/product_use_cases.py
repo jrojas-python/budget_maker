@@ -1,13 +1,26 @@
+from __future__ import annotations
+
+import logging
+
 from beanie import PydanticObjectId
+from fastapi import UploadFile
 
 from app.domain.models.product import Product
 from app.domain.schemas.category import CategoryResponse
-from app.domain.schemas.product import ProductColorsUpdate, ProductCreate, ProductResponse, ProductUpdate, ProductColorSchema
+from app.domain.schemas.product import (
+    ProductColorSchema,
+    ProductColorsUpdate,
+    ProductCreate,
+    ProductResponse,
+    ProductUpdate,
+)
 from app.domain.schemas.search import PaginatedResponse, ProductSearchParams
 from app.infrastructure.repositories.category_repo import CategoryRepository
 from app.infrastructure.repositories.product_repo import ProductRepository
 from app.infrastructure.services.excel_service import ExcelService
 from app.infrastructure.services.image_service import ImageService
+
+logger = logging.getLogger(__name__)
 
 
 def _parse_object_id(value: str, field_name: str) -> PydanticObjectId:
@@ -37,55 +50,53 @@ def _normalize_tags(tags: list[str] | None) -> list[str]:
     return normalized_tags
 
 
-def _get_stored_images(product: Product) -> list[str]:
-    if product.images:
-        return list(product.images)
-    if product.image_filename:
-        return [product.image_filename]
-    return []
+def _build_product_image_update(
+    *,
+    original_images: list[str],
+    original_legacy: str | None,
+    references: list[str],
+) -> dict[str, list[str] | str | None]:
+    """Reconstruye images/image_filename sin reintroducir referencias borradas."""
+    normalized_references = [str(reference).strip() for reference in references if str(reference).strip()]
+
+    normalized_legacy = str(original_legacy or "").strip()
+    keep_legacy_field = bool(
+        normalized_legacy
+        and normalized_legacy not in original_images
+        and normalized_legacy in normalized_references
+    )
+
+    legacy_reference = normalized_legacy if keep_legacy_field else None
+    images = [
+        reference
+        for reference in normalized_references
+        if not legacy_reference or reference != legacy_reference
+    ]
+    return {"images": images, "image_filename": legacy_reference}
 
 
-def _build_image_urls(product: Product, base_url: str) -> list[str]:
-    root_url = base_url.rstrip("/")
-    return [f"{root_url}/uploads/products/{filename}" for filename in _get_stored_images(product)]
-
-
-def _unique_image_filenames(product: Product) -> list[str]:
-    filenames: list[str] = []
-    for filename in [*_get_stored_images(product), *([product.image_filename] if product.image_filename else [])]:
-        if filename not in filenames:
-            filenames.append(filename)
-    return filenames
-
-
-async def _enrich_categories(product: Product, category_repo: CategoryRepository) -> list[CategoryResponse]:
+async def _enrich_categories(
+    product: Product,
+    category_repo: CategoryRepository,
+) -> list[CategoryResponse]:
     """Resuelve category_ids a CategoryResponse."""
     if not product.category_ids:
         return []
-    cats = []
-    for cid in product.category_ids:
-        cat = await category_repo.get_by_id(str(cid))
-        if cat:
-            cats.append(CategoryResponse(id=str(cat.id), name=cat.name, slug=cat.slug, description=cat.description, is_active=cat.is_active))
-    return cats
 
-
-def build_product_response(product: Product, base_url: str, categories: list[CategoryResponse] | None = None) -> ProductResponse:
-    return ProductResponse(
-        id=str(product.id),
-        name=product.name,
-        sku=product.sku,
-        description=product.description,
-        brand=product.brand,
-        cost=product.cost,
-        unit=product.unit,
-        currency=product.currency,
-        image_urls=_build_image_urls(product, base_url),
-        tags=_normalize_tags(product.tags),
-        category_ids=[str(cid) for cid in product.category_ids],
-        categories=categories or [],
-        colors=[ProductColorSchema(name=c.name, hex=c.hex) for c in product.colors],
-    )
+    categories: list[CategoryResponse] = []
+    for category_id in product.category_ids:
+        category = await category_repo.get_by_id(str(category_id))
+        if category:
+            categories.append(
+                CategoryResponse(
+                    id=str(category.id),
+                    name=category.name,
+                    slug=category.slug,
+                    description=category.description,
+                    is_active=category.is_active,
+                )
+            )
+    return categories
 
 
 class ProductUseCases:
@@ -102,6 +113,33 @@ class ProductUseCases:
         self._excel = excel_service
         self._image = image_service
         self._category_repo = category_repo
+
+    def build_response(
+        self,
+        product: Product,
+        base_url: str,
+        categories: list[CategoryResponse] | None = None,
+    ) -> ProductResponse:
+        """Construye la respuesta pública de un producto."""
+        return ProductResponse(
+            id=str(product.id),
+            name=product.name,
+            sku=product.sku,
+            description=product.description,
+            brand=product.brand,
+            cost=product.cost,
+            unit=product.unit,
+            currency=product.currency,
+            image_urls=self._image.build_product_image_urls(
+                product.images,
+                product.image_filename,
+                base_url,
+            ),
+            tags=_normalize_tags(product.tags),
+            category_ids=[str(category_id) for category_id in product.category_ids],
+            categories=categories or [],
+            colors=[ProductColorSchema(name=color.name, hex=color.hex) for color in product.colors],
+        )
 
     async def list_all(self) -> list[Product]:
         return await self._repo.get_all()
@@ -130,40 +168,95 @@ class ProductUseCases:
         product = await self._repo.get_by_id(product_id)
         if not product:
             return None
-        await product.set({"colors": [c.model_dump() for c in data.colors]})
+        await product.set({"colors": [color.model_dump() for color in data.colors]})
         return product
 
     async def delete(self, product_id: str) -> bool:
-        """Elimina producto y sus imágenes del disco (cascade)."""
+        """Elimina producto y sus referencias de imágenes."""
         product = await self._repo.get_by_id(product_id)
         if not product:
             return False
-        for filename in _unique_image_filenames(product):
-            self._image.delete_image(filename)
-        await product.delete()
+
+        original_images = list(product.images)
+        original_legacy = product.image_filename
+        references = self._image.collect_product_references(product.images, product.image_filename)
+
+        deleted_references: list[str] = []
+        if references:
+            try:
+                for reference in references:
+                    await self._image.delete_product_image(reference)
+                    deleted_references.append(reference)
+            except Exception as exc:
+                remaining_references = [
+                    reference for reference in references if reference not in deleted_references
+                ]
+                logger.warning(
+                    "[product_use_cases] fallo eliminando imágenes en cascada | product_id=%s exc=%s",
+                    product_id,
+                    exc,
+                    exc_info=True,
+                )
+                await self._repo.update(
+                    product_id,
+                    _build_product_image_update(
+                        original_images=original_images,
+                        original_legacy=original_legacy,
+                        references=remaining_references,
+                    ),
+                )
+                raise
+
+        refreshed_product = await self._repo.get_by_id(product_id)
+        if not refreshed_product:
+            return False
+
+        try:
+            await refreshed_product.delete()
+        except Exception as exc:
+            logger.warning(
+                "[product_use_cases] fallo eliminando producto tras borrar assets | product_id=%s exc=%s",
+                product_id,
+                exc,
+                exc_info=True,
+            )
+            if references:
+                await self._repo.update(product_id, {"images": [], "image_filename": None})
+            raise
         return True
 
-    async def upload_image(self, product_id: str, content: bytes, original_filename: str) -> Product:
+    async def upload_image(self, product_id: str, file: UploadFile) -> Product:
         """Sube una imagen a un producto respetando el límite máximo."""
         product = await self._repo.get_by_id(product_id)
         if not product:
             raise ValueError("Producto no encontrado")
 
-        existing_images = _get_stored_images(product)
-        if len(existing_images) >= 10:
+        stored_references = self._image.collect_product_references(
+            product.images,
+            product.image_filename,
+        )
+        if len(stored_references) >= 10:
             raise ValueError("El producto ya tiene el máximo de 10 imágenes")
 
-        if not product.images and existing_images:
-            await self._repo.update(product_id, {"images": existing_images})
+        image_url = await self._image.upload_product_image(product_id, file)
+        update_data = {"images": [*stored_references, image_url]}
+        if product.image_filename and product.image_filename not in product.images:
+            update_data["image_filename"] = None
 
-        filename = self._image.save_image(content, product_id, original_filename)
         try:
-            updated_product = await self._repo.add_image(product_id, filename)
-        except Exception:
-            self._image.delete_image(filename)
+            updated_product = await self._repo.update(product_id, update_data)
+        except Exception as exc:
+            logger.warning(
+                "[product_use_cases] fallo persistiendo upload | product_id=%s exc=%s",
+                product_id,
+                exc,
+                exc_info=True,
+            )
+            await self._safe_delete_uploaded_image(image_url)
             raise
+
         if not updated_product:
-            self._image.delete_image(filename)
+            await self._safe_delete_uploaded_image(image_url)
             raise ValueError("Producto no encontrado")
         return updated_product
 
@@ -173,38 +266,76 @@ class ProductUseCases:
         if not product:
             raise ValueError("Producto no encontrado")
 
-        stored_images = _get_stored_images(product)
-        if filename not in stored_images:
-            raise ValueError("Imagen no encontrada")
+        target_reference = self._image.resolve_product_reference(
+            product.images,
+            product.image_filename,
+            filename,
+        )
+        original_images = list(product.images)
+        original_legacy = product.image_filename
+        current_references = self._image.collect_product_references(
+            product.images,
+            product.image_filename,
+        )
+        updated_references = [
+            reference for reference in current_references if reference != target_reference
+        ]
 
-        updated_product: Product | None = product
-        if product.images:
-            updated_product = await self._repo.remove_image(product_id, filename)
-        if product.image_filename == filename:
-            updated_product = await self._repo.update(product_id, {"image_filename": None})
-
+        updated_product = await self._repo.update(
+            product_id,
+            {"images": updated_references, "image_filename": None},
+        )
         if not updated_product:
             raise ValueError("Producto no encontrado")
 
-        self._image.delete_image(filename)
+        try:
+            await self._image.delete_product_image(target_reference)
+        except Exception as exc:
+            logger.warning(
+                "[product_use_cases] fallo borrando imagen | product_id=%s reference=%s exc=%s",
+                product_id,
+                target_reference,
+                exc,
+                exc_info=True,
+            )
+            await self._repo.update(
+                product_id,
+                {"images": original_images, "image_filename": original_legacy},
+            )
+            raise
+
         return updated_product
 
-    async def search(self, params: ProductSearchParams, base_url: str) -> PaginatedResponse[ProductResponse]:
+    async def search(
+        self,
+        params: ProductSearchParams,
+        base_url: str,
+    ) -> PaginatedResponse[ProductResponse]:
         """Búsqueda avanzada con resolución de slug y enriquecimiento."""
-        resolved_cat_id: str | None = None
+        resolved_category_id: str | None = None
         if params.category_slug:
-            cat = await self._category_repo.get_by_slug(params.category_slug)
-            if cat:
-                resolved_cat_id = str(cat.id)
+            category = await self._category_repo.get_by_slug(params.category_slug)
+            if category:
+                resolved_category_id = str(category.id)
             else:
-                return PaginatedResponse.build(items=[], total=0, page=params.page, limit=params.limit)
+                return PaginatedResponse.build(
+                    items=[],
+                    total=0,
+                    page=params.page,
+                    limit=params.limit,
+                )
 
         if params.category_id:
             _parse_object_id(params.category_id, "category_id")
 
-        products, total = await self._repo.search(params, resolved_cat_id)
-        items = [build_product_response(p, base_url) for p in products]
-        return PaginatedResponse.build(items=items, total=total, page=params.page, limit=params.limit)
+        products, total = await self._repo.search(params, resolved_category_id)
+        items = [self.build_response(product, base_url) for product in products]
+        return PaginatedResponse.build(
+            items=items,
+            total=total,
+            page=params.page,
+            limit=params.limit,
+        )
 
     async def enrich_categories(self, product: Product) -> list[CategoryResponse]:
         return await _enrich_categories(product, self._category_repo)
@@ -217,15 +348,14 @@ class ProductUseCases:
         for data in products_data:
             slugs = data.pop("_category_slugs", None)
             if slugs:
-                cat_ids = []
+                category_ids: list[PydanticObjectId] = []
                 for slug in slugs:
-                    cat = await self._category_repo.get_by_slug(slug)
-                    if cat:
-                        cat_ids.append(PydanticObjectId(str(cat.id)))
-                data["category_ids"] = cat_ids
+                    category = await self._category_repo.get_by_slug(slug)
+                    if category:
+                        category_ids.append(PydanticObjectId(str(category.id)))
+                data["category_ids"] = category_ids
             if "tags" in data:
-                normalized = _normalize_tags(data["tags"])
-                data["tags"] = normalized[:15]
+                data["tags"] = _normalize_tags(data["tags"])[:15]
             existing = await self._repo.get_by_sku(data["sku"])
             await self._repo.upsert_by_sku(data)
             if existing:
@@ -233,3 +363,14 @@ class ProductUseCases:
             else:
                 created += 1
         return {"created": created, "updated": updated, "total": created + updated}
+
+    async def _safe_delete_uploaded_image(self, image_url: str) -> None:
+        try:
+            await self._image.delete_product_image(image_url)
+        except Exception as exc:
+            logger.warning(
+                "[product_use_cases] rollback remoto falló | image_url=%s exc=%s",
+                image_url,
+                exc,
+                exc_info=True,
+            )

@@ -382,3 +382,44 @@ async def test_lifespan_closes_mongo_when_seed_fails(
             pytest.fail("El lifespan no debe iniciar si falla un seed.")
 
     assert calls[-1] == "close_db"
+
+
+def test_settings_accept_supabase_storage_configuration():
+    configured = Settings(
+        _env_file=None,
+        mongo_uri="mongodb://atlas_user:atlas_password@localhost:27017/budget_maker?authSource=admin",
+        test_mongo_uri="mongodb://tester:tester@localhost:27017/budget_maker_test?authSource=admin",
+        supabase_url="https://Budget-Maker.supabase.co/",
+        supabase_secret_key="service-role-key",
+        supabase_products_bucket="products",
+        supabase_media_bucket="media",
+        supabase_branding_prefix="/branding/",
+    )
+
+    assert configured.supabase_url == "https://budget-maker.supabase.co"
+    assert configured.supabase_products_bucket == "products"
+    assert configured.supabase_media_bucket == "media"
+    assert configured.supabase_branding_prefix == "branding"
+
+
+@pytest.mark.parametrize(
+    ("field_name", "field_value", "expected_error"),
+    [
+        ("supabase_url", "https://demo.supabase.co/path", "SUPABASE_URL"),
+        ("supabase_products_bucket", "Products", "SUPABASE_PRODUCTS_BUCKET"),
+        ("supabase_branding_prefix", "../branding", "SUPABASE_BRANDING_PREFIX"),
+    ],
+)
+def test_settings_reject_invalid_supabase_storage_values(
+    field_name: str,
+    field_value: str,
+    expected_error: str,
+):
+    payload = {
+        "mongo_uri": "mongodb://atlas_user:atlas_password@localhost:27017/budget_maker?authSource=admin",
+        "test_mongo_uri": "mongodb://tester:tester@localhost:27017/budget_maker_test?authSource=admin",
+        field_name: field_value,
+    }
+
+    with pytest.raises(ValidationError, match=expected_error):
+        Settings(_env_file=None, **payload)

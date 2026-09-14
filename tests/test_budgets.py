@@ -684,3 +684,96 @@ async def test_pdf_shows_photo_and_server_side_branding_when_enabled(
             image_path.unlink()
         if logo_path.exists():
             logo_path.unlink()
+
+
+@pytest.mark.asyncio
+async def test_pdf_uses_remote_supabase_assets_without_local_fallback(
+    client: AsyncClient,
+    auth_headers: dict,
+    fake_storage_service,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    from app.api.dependencies import _pdf_service, get_budget_use_cases
+
+    await _create_product(client, auth_headers)
+    update_global = await client.put(
+        "/api/v1/config/global",
+        json={"tax_rate": 18, "link_ttl_minutes": 30, "show_product_photos_in_pdf": True},
+        headers=auth_headers,
+    )
+    assert update_global.status_code == 200
+
+    logo_url = fake_storage_service.store_branding_object("site_logo.png")
+    update_logo = await client.put(
+        "/api/v1/config/site_logo",
+        json={"value": logo_url, "description": "Logo remoto"},
+        headers=auth_headers,
+    )
+    assert update_logo.status_code == 200
+
+    uc = get_budget_use_cases()
+    product = await uc._product_repo.get_by_sku("BGT-001")
+    assert product is not None
+    product_url = fake_storage_service.store_product_object(f"{product.id}/budget-remote.png")
+    product.images = [product_url]
+    await product.save()
+
+    created = await client.post("/api/v1/budgets/", json=_budget_payload())
+    budget_uuid = created.json()["uuid"]
+
+    captured: dict[str, str] = {}
+
+    def _fake_pdf(html_content: str, base_url: str | None = None) -> bytes:
+        captured["html"] = html_content
+        captured["base_url"] = base_url or ""
+        return b"%PDF-1.4 prueba"
+
+    monkeypatch.setattr(_pdf_service, "generate_from_html", _fake_pdf)
+
+    res = await client.get(f"/api/v1/budgets/{budget_uuid}/pdf")
+    assert res.status_code == 200
+    assert logo_url in captured["html"]
+    assert product_url in captured["html"]
+    assert captured["base_url"].startswith("file://")
+
+
+@pytest.mark.asyncio
+async def test_pdf_generation_error_with_remote_assets_is_propagated(
+    client: AsyncClient,
+    auth_headers: dict,
+    fake_storage_service,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    from app.api.dependencies import _pdf_service, get_budget_use_cases
+
+    await _create_product(client, auth_headers)
+    update_global = await client.put(
+        "/api/v1/config/global",
+        json={"tax_rate": 18, "link_ttl_minutes": 30, "show_product_photos_in_pdf": True},
+        headers=auth_headers,
+    )
+    assert update_global.status_code == 200
+
+    logo_url = fake_storage_service.store_branding_object("site_logo.png")
+    await client.put(
+        "/api/v1/config/site_logo",
+        json={"value": logo_url, "description": "Logo remoto"},
+        headers=auth_headers,
+    )
+
+    uc = get_budget_use_cases()
+    product = await uc._product_repo.get_by_sku("BGT-001")
+    assert product is not None
+    product.images = [fake_storage_service.store_product_object(f"{product.id}/budget-remote.png")]
+    await product.save()
+
+    created = await client.post("/api/v1/budgets/", json=_budget_payload())
+    budget_uuid = created.json()["uuid"]
+
+    def _failing_pdf(html_content: str, base_url: str | None = None) -> bytes:
+        raise RuntimeError("pdf unavailable")
+
+    monkeypatch.setattr(_pdf_service, "generate_from_html", _failing_pdf)
+
+    with pytest.raises(RuntimeError, match="pdf unavailable"):
+        await client.get(f"/api/v1/budgets/{budget_uuid}/pdf")

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import random
 import string
 import urllib.parse
@@ -48,7 +50,14 @@ class BudgetUseCases:
             color_hex = None
             if product.colors:
                 if item_req.color_hex:
-                    match = next((c for c in product.colors if c.hex.upper() == item_req.color_hex.upper()), None)
+                    match = next(
+                        (
+                            color
+                            for color in product.colors
+                            if color.hex.upper() == item_req.color_hex.upper()
+                        ),
+                        None,
+                    )
                     if match:
                         color_name, color_hex = match.name, match.hex
                     else:
@@ -58,22 +67,23 @@ class BudgetUseCases:
                     color_name = product.colors[0].name
                     color_hex = product.colors[0].hex
 
-            items.append(BudgetItem(
-                sku=product.sku,
-                name=product.name,
-                quantity=item_req.quantity,
-                unit_cost=product.cost,
-                line_total=line_total,
-                color_name=color_name,
-                color_hex=color_hex,
-            ))
+            items.append(
+                BudgetItem(
+                    sku=product.sku,
+                    name=product.name,
+                    quantity=item_req.quantity,
+                    unit_cost=product.cost,
+                    line_total=line_total,
+                    color_name=color_name,
+                    color_hex=color_hex,
+                )
+            )
             subtotal += line_total
 
         config = await self._config_repo.get_effective_global_config()
 
-        if data.payment_method:
-            if data.payment_method not in config.payment_methods:
-                raise ValueError(f"Método de pago no disponible: {data.payment_method}")
+        if data.payment_method and data.payment_method not in config.payment_methods:
+            raise ValueError(f"Método de pago no disponible: {data.payment_method}")
 
         tax_percent = float(config.tax_rate)
         link_ttl_minutes = int(config.link_ttl_minutes)
@@ -118,32 +128,50 @@ class BudgetUseCases:
         """Verifica si el link del presupuesto ha expirado."""
         now = datetime.now(timezone.utc)
         if budget.expires_at:
-            expires = budget.expires_at.replace(tzinfo=timezone.utc) if budget.expires_at.tzinfo is None else budget.expires_at
+            expires = (
+                budget.expires_at.replace(tzinfo=timezone.utc)
+                if budget.expires_at.tzinfo is None
+                else budget.expires_at
+            )
             return now >= expires
-        # Fallback para presupuestos legacy sin expires_at
+
         minutes = int(budget.link_ttl_minutes)
-        created = budget.created_at.replace(tzinfo=timezone.utc) if budget.created_at.tzinfo is None else budget.created_at
+        created = (
+            budget.created_at.replace(tzinfo=timezone.utc)
+            if budget.created_at.tzinfo is None
+            else budget.created_at
+        )
         elapsed = (now - created).total_seconds() / 60
         return elapsed >= minutes
 
     async def build_budget_render_context(self, budget: Budget, for_pdf: bool) -> dict[str, Any]:
         """Construye contexto de render para web/PDF usando configuración global."""
         config = await self._config_repo.get_effective_global_config()
-        site_title = self._sanitize_site_title(str(config.extra_settings.get("site_title", self._DEFAULT_SITE_TITLE)))
+        site_title = self._sanitize_site_title(
+            str(config.extra_settings.get("site_title", self._DEFAULT_SITE_TITLE))
+        )
         site_subtitle = str(config.extra_settings.get("site_subtitle", "")).strip()
         show_photos = bool(config.show_product_photos_in_pdf)
 
         logo_path = str(config.extra_settings.get("site_logo", "")).strip()
         logo_url = self._resolve_branding_asset(logo_path, for_pdf=for_pdf)
 
-        products_by_sku = await self._product_repo.get_by_skus([item.sku for item in budget.items]) if show_photos else {}
+        products_by_sku = (
+            await self._product_repo.get_by_skus([item.sku for item in budget.items])
+            if show_photos
+            else {}
+        )
         budget_items: list[dict[str, Any]] = []
         for item in budget.items:
-            image_url = await self._resolve_product_image(
-                item.sku,
-                for_pdf=for_pdf,
-                products_by_sku=products_by_sku,
-            ) if show_photos else None
+            image_url = (
+                await self._resolve_product_image(
+                    item.sku,
+                    for_pdf=for_pdf,
+                    products_by_sku=products_by_sku,
+                )
+                if show_photos
+                else None
+            )
             budget_items.append({"item": item, "image_url": image_url})
 
         return {
@@ -193,7 +221,7 @@ class BudgetUseCases:
     def _resolve_branding_asset(self, value: str, for_pdf: bool) -> str | None:
         if not value:
             return None
-        if value.startswith(("http://", "https://", "file://")):
+        if self._is_public_http_url(value) or value.startswith("file://"):
             return value
         if value.startswith("/uploads/branding/"):
             if not for_pdf:
@@ -230,20 +258,37 @@ class BudgetUseCases:
         if not product:
             return None
 
-        for filename in self._get_stored_images(product.images, product.image_filename):
-            safe_filename = Path(filename).name if filename else ""
-            if not safe_filename:
+        for reference in self._get_stored_images(product.images, product.image_filename):
+            if self._is_public_http_url(reference):
+                return reference
+            if reference.startswith("/uploads/products/"):
+                if not for_pdf:
+                    return reference
+                filename = Path(reference).name
+            else:
+                filename = Path(reference).name if reference else ""
+                if not for_pdf and filename:
+                    return f"/uploads/products/{urllib.parse.quote(filename)}"
+
+            if not filename:
                 continue
-            if not for_pdf:
-                return f"/uploads/products/{urllib.parse.quote(safe_filename)}"
-            file_path = Path(settings.upload_dir) / safe_filename
+            file_path = Path(settings.upload_dir) / filename
             if file_path.exists():
                 return file_path.resolve().as_uri()
         return None
 
-    def _get_stored_images(self, images: list[str], legacy_image_filename: str | None) -> list[str]:
-        if images:
-            return list(images)
-        if legacy_image_filename:
-            return [legacy_image_filename]
-        return []
+    def _get_stored_images(
+        self,
+        images: list[str],
+        legacy_image_filename: str | None,
+    ) -> list[str]:
+        references: list[str] = []
+        for candidate in [*images, legacy_image_filename or ""]:
+            normalized = str(candidate or "").strip()
+            if normalized and normalized not in references:
+                references.append(normalized)
+        return references
+
+    def _is_public_http_url(self, value: str) -> bool:
+        parsed = urllib.parse.urlsplit(value)
+        return parsed.scheme.lower() in {"http", "https"} and bool(parsed.netloc)

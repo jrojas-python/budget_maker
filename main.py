@@ -2,28 +2,26 @@ from __future__ import annotations
 
 import logging
 from contextlib import asynccontextmanager
+from os.path import commonpath
 from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from app.database import close_db, init_db
+from app.api.dependencies import get_auth_use_cases, get_config_use_cases
 from app.api.v1.auth import router as auth_router
 from app.api.v1.budgets import router as budgets_router
 from app.api.v1.categories import router as categories_router
 from app.api.v1.config import router as config_router
 from app.api.v1.products import router as products_router
 from app.api.v1.users import router as users_router
-from app.api.dependencies import get_auth_use_cases, get_config_use_cases
+from app.database import close_db, init_db
 from settings.config import Settings, settings
 from web.views import router as web_router
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(name)s | %(levelname)s | %(message)s")
 logger = logging.getLogger(__name__)
-
-Path(settings.upload_dir).mkdir(parents=True, exist_ok=True)
-Path(settings.branding_dir).mkdir(parents=True, exist_ok=True)
 
 
 @asynccontextmanager
@@ -42,6 +40,12 @@ async def lifespan(app: FastAPI):
 
 def create_app(app_settings: Settings) -> FastAPI:
     """Crea la aplicación FastAPI con su política CORS configurada."""
+    upload_dir = Path(app_settings.upload_dir)
+    branding_dir = Path(app_settings.branding_dir)
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    branding_dir.mkdir(parents=True, exist_ok=True)
+    uploads_root = Path(commonpath([str(upload_dir), str(branding_dir)]))
+
     application = FastAPI(
         title="Budget Maker API",
         description="API de generación de presupuestos/cotizaciones",
@@ -58,7 +62,7 @@ def create_app(app_settings: Settings) -> FastAPI:
         expose_headers=["Content-Disposition"],
     )
 
-    application.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+    application.mount("/uploads", StaticFiles(directory=str(uploads_root)), name="uploads")
     application.mount("/static", StaticFiles(directory="web/static"), name="static")
 
     application.include_router(auth_router)

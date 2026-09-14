@@ -1,10 +1,22 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, File
+from __future__ import annotations
 
-from app.application.use_cases.product_use_cases import ProductUseCases, build_product_response
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
+
 from app.api.dependencies import get_current_user, get_product_use_cases
+from app.application.use_cases.product_use_cases import ProductUseCases
 from app.domain.models.user import User
-from app.domain.schemas.product import ProductColorsUpdate, ProductCreate, ProductUpdate, ProductResponse
+from app.domain.schemas.product import (
+    ProductColorsUpdate,
+    ProductCreate,
+    ProductResponse,
+    ProductUpdate,
+)
 from app.domain.schemas.search import PaginatedResponse, ProductSearchParams, SortBy
+from app.infrastructure.services.image_service import ImageReferenceError, ImageValidationError
+from app.infrastructure.services.supabase_storage_service import (
+    SupabaseStorageConfigurationError,
+    SupabaseStorageOperationError,
+)
 
 router = APIRouter(prefix="/api/v1/products", tags=["Productos"])
 
@@ -25,28 +37,43 @@ async def search_products(
     uc: ProductUseCases = Depends(get_product_use_cases),
 ):
     params = ProductSearchParams(
-        q=q, sku=sku, category_id=category_id, category_slug=category_slug,
-        tags=tags, min_price=min_price, max_price=max_price, page=page, limit=limit, sort_by=sort_by,
+        q=q,
+        sku=sku,
+        category_id=category_id,
+        category_slug=category_slug,
+        tags=tags,
+        min_price=min_price,
+        max_price=max_price,
+        page=page,
+        limit=limit,
+        sort_by=sort_by,
     )
     try:
         return await uc.search(params, str(request.base_url))
-    except ValueError as e:
-        raise HTTPException(status_code=422, detail=str(e))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.get("/", response_model=list[ProductResponse])
-async def list_products(request: Request, uc: ProductUseCases = Depends(get_product_use_cases)):
+async def list_products(
+    request: Request,
+    uc: ProductUseCases = Depends(get_product_use_cases),
+):
     products = await uc.list_all()
-    return [build_product_response(p, str(request.base_url)) for p in products]
+    return [uc.build_response(product, str(request.base_url)) for product in products]
 
 
 @router.get("/{product_id}", response_model=ProductResponse)
-async def get_product(product_id: str, request: Request, uc: ProductUseCases = Depends(get_product_use_cases)):
+async def get_product(
+    product_id: str,
+    request: Request,
+    uc: ProductUseCases = Depends(get_product_use_cases),
+):
     product = await uc.get_by_id(product_id)
     if not product:
         raise HTTPException(status_code=404, detail="Producto no encontrado")
     categories = await uc.enrich_categories(product)
-    return build_product_response(product, str(request.base_url), categories)
+    return uc.build_response(product, str(request.base_url), categories)
 
 
 @router.post("/", response_model=ProductResponse, status_code=201)
@@ -58,9 +85,9 @@ async def create_product(
 ):
     try:
         product = await uc.create(body)
-    except ValueError as e:
-        raise HTTPException(status_code=422, detail=str(e))
-    return build_product_response(product, str(request.base_url))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return uc.build_response(product, str(request.base_url))
 
 
 @router.put("/{product_id}", response_model=ProductResponse)
@@ -73,11 +100,11 @@ async def update_product(
 ):
     try:
         product = await uc.update(product_id, body)
-    except ValueError as e:
-        raise HTTPException(status_code=422, detail=str(e))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     if not product:
         raise HTTPException(status_code=404, detail="Producto no encontrado")
-    return build_product_response(product, str(request.base_url))
+    return uc.build_response(product, str(request.base_url))
 
 
 @router.delete("/{product_id}", status_code=204)
@@ -86,7 +113,14 @@ async def delete_product(
     _: User = Depends(get_current_user),
     uc: ProductUseCases = Depends(get_product_use_cases),
 ):
-    deleted = await uc.delete(product_id)
+    try:
+        deleted = await uc.delete(product_id)
+    except SupabaseStorageConfigurationError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except SupabaseStorageOperationError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except ImageReferenceError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
     if not deleted:
         raise HTTPException(status_code=404, detail="Producto no encontrado")
 
@@ -100,18 +134,21 @@ async def upload_product_image(
     uc: ProductUseCases = Depends(get_product_use_cases),
 ):
     """Sube una imagen y la agrega a la galería del producto."""
-    from app.infrastructure.services.image_service import ImageService
-    svc = ImageService()
     try:
-        content = await svc.validate_image(file)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    try:
-        product = await uc.upload_image(product_id, content, file.filename or "image.jpg")
-    except ValueError as e:
-        detail = str(e)
-        raise HTTPException(status_code=404 if detail == "Producto no encontrado" else 422, detail=detail)
-    return build_product_response(product, str(request.base_url))
+        product = await uc.upload_image(product_id, file)
+    except ImageValidationError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except SupabaseStorageConfigurationError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except SupabaseStorageOperationError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except ValueError as exc:
+        detail = str(exc)
+        raise HTTPException(
+            status_code=404 if detail == "Producto no encontrado" else 422,
+            detail=detail,
+        ) from exc
+    return uc.build_response(product, str(request.base_url))
 
 
 @router.delete("/{product_id}/images/{filename}", response_model=ProductResponse)
@@ -125,9 +162,19 @@ async def delete_product_image(
     """Elimina una imagen específica de un producto."""
     try:
         product = await uc.delete_image(product_id, filename)
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    return build_product_response(product, str(request.base_url))
+    except ImageReferenceError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except SupabaseStorageConfigurationError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except SupabaseStorageOperationError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except ValueError as exc:
+        detail = str(exc)
+        raise HTTPException(
+            status_code=404 if detail == "Producto no encontrado" else 422,
+            detail=detail,
+        ) from exc
+    return uc.build_response(product, str(request.base_url))
 
 
 @router.put("/{product_id}/colors", response_model=ProductResponse)
@@ -141,7 +188,7 @@ async def update_product_colors(
     product = await uc.update_colors(product_id, body)
     if not product:
         raise HTTPException(status_code=404, detail="Producto no encontrado")
-    return build_product_response(product, str(request.base_url))
+    return uc.build_response(product, str(request.base_url))
 
 
 @router.post("/import")
@@ -156,6 +203,6 @@ async def import_products(
     content = await file.read()
     try:
         result = await uc.bulk_import_from_excel(content)
-    except ValueError as e:
-        raise HTTPException(status_code=422, detail=str(e))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     return result

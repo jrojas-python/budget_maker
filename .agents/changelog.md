@@ -4,6 +4,43 @@ Registro de iteraciones del proyecto.
 
 ---
 
+## [2026-09-14] Iteración 16 — Migración de imágenes a Supabase Storage
+
+### Realizado
+- Se incorporó `SupabaseStorageService` como adaptador asíncrono del cliente oficial para subir, borrar y validar URLs públicas de Storage sin exponer secretos en frontend.
+- `ImageService` pasó a ser una fachada con compatibilidad legacy: nuevos uploads de productos van a `products`, branding nuevo a `media/branding`, y las referencias locales existentes siguen leyéndose/borrándose desde `/uploads`.
+- Se refactorizaron dependencias, casos de uso y routers de productos/configuración para inyectar el servicio singleton, preservar contratos HTTP y ejecutar rollback cuando falla la persistencia Mongo tras escribir en Storage.
+- El render de presupuestos/PDF ahora reconoce URLs públicas HTTPS para logo e imágenes de producto y mantiene fallback local solo para referencias legacy.
+- Se añadió una migración declarativa de Supabase para los buckets públicos `products` y `media`, junto con variables de entorno/documentación operativa para la transición.
+- Las pruebas ahora inyectan un fake de Storage en `tests/conftest.py` y cubren uploads cloud, limpieza/rollback, branding remoto y compatibilidad legacy sin tocar Supabase real.
+
+### Archivos modificados
+- `settings/config.py`
+- `app/infrastructure/services/supabase_storage_service.py`
+- `app/infrastructure/services/image_service.py`
+- `app/api/dependencies.py`
+- `app/application/use_cases/product_use_cases.py`
+- `app/api/v1/products.py`
+- `app/application/use_cases/config_use_cases.py`
+- `app/api/v1/config.py`
+- `app/application/use_cases/budget_use_cases.py`
+- `main.py`
+- `docker-compose.yml`
+- `requirements.txt`
+- `.env.example`
+- `.gitignore`
+- `README.md`
+- `tests/conftest.py`
+- `tests/test_products.py`
+- `tests/test_config.py`
+- `tests/test_budgets.py`
+- `tests/test_mongo_config.py`
+- `.agents/changelog.md`
+- `supabase/migrations/20260914024000_storage_buckets.sql`
+- `_bmad-output/implementation-artifacts/spec-migracion-imagenes-supabase-storage.md`
+
+---
+
 ## [2026-09-14] Iteración 14 — CORS para localhost 3000 y 3001
 
 ### Realizado

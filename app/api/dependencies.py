@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from fastapi import Depends, HTTPException
 from fastapi.security import OAuth2PasswordBearer
 
@@ -17,10 +19,11 @@ from app.infrastructure.services.auth_service import decode_token
 from app.infrastructure.services.excel_service import ExcelService
 from app.infrastructure.services.image_service import ImageService
 from app.infrastructure.services.pdf_service import PdfService
+from app.infrastructure.services.supabase_storage_service import SupabaseStorageService
+from settings.config import settings
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 
-# Instancias singleton de repositorios y servicios
 _product_repo = ProductRepository()
 _budget_repo = BudgetRepository()
 _config_repo = ConfigRepository()
@@ -28,7 +31,8 @@ _user_repo = UserRepository()
 _category_repo = CategoryRepository()
 _excel_service = ExcelService()
 _pdf_service = PdfService()
-_image_service = ImageService()
+_supabase_storage_service = SupabaseStorageService(settings)
+_image_service = ImageService(storage_service=_supabase_storage_service, app_settings=settings)
 
 
 async def get_current_user(token: str = Depends(oauth2_scheme)) -> User:
@@ -53,7 +57,7 @@ def get_user_use_cases() -> UserUseCases:
 
 
 def get_config_use_cases() -> ConfigUseCases:
-    return ConfigUseCases(repo=_config_repo)
+    return ConfigUseCases(repo=_config_repo, image_service=_image_service)
 
 
 def get_product_use_cases() -> ProductUseCases:

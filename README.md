@@ -43,7 +43,8 @@ budget_maker/
 │       ├── styles.css               # Estilos responsivos
 │       └── js/                      # Módulos JS (api, auth, catalog, admin)
 ├── tests/                           # Tests E2E (pytest + httpx)
-├── uploads/products/                # Imágenes de productos (montado como volumen)
+├── uploads/products/                # Compatibilidad legacy para referencias locales
+├── supabase/migrations/             # Buckets y configuración declarativa de Storage
 ├── Dockerfile
 └── docker-compose.yml
 ```
@@ -65,6 +66,8 @@ budget_maker/
 4. Configura `TEST_MONGO_URI` para que apunte **solo** a `budget_maker_test` en `localhost` con autenticación.
 5. Ajusta `MONGO_LOCAL_ROOT_USERNAME` y `MONGO_LOCAL_ROOT_PASSWORD` para el stack Docker local. Usa una contraseña alfanumérica sin caracteres reservados de URI, porque Docker Compose interpola estas credenciales tanto como valores literales del servidor como dentro de la URI del cliente.
 6. Mantén `CORS_ALLOWED_ORIGINS=https://budget-maker-frontend.vercel.app,http://localhost:3000,http://localhost:3001` para frontend productivo y desarrollo local. Para autorizar otros frontends en Render, agrega sus orígenes separados por comas, sin rutas; los espacios y las barras finales se normalizan.
+7. Configura `SUPABASE_URL`, `SUPABASE_SECRET_KEY`, `SUPABASE_PRODUCTS_BUCKET`, `SUPABASE_MEDIA_BUCKET` y `SUPABASE_BRANDING_PREFIX` para que los uploads nuevos se persistan en Supabase Storage. Usa únicamente la **service role key** en backend y nunca la expongas al frontend.
+8. Aplica la migración `supabase/migrations/20260914024000_storage_buckets.sql` en tu proyecto Supabase para declarar los buckets públicos `products` y `media` con límite de 2 MB y MIME restringidos.
 
 `.env.example` ya incluye:
 - un ejemplo sanitizado de Atlas,
@@ -110,8 +113,13 @@ Si ya existía un volumen local anónimo, el contenedor intenta crear el usuario
 | `JWT_SECRET_KEY` | `change-me-in-production` | Secreto JWT (cambiar en producción). |
 | `JWT_ALGORITHM` | `HS256` | Algoritmo JWT. |
 | `JWT_EXPIRE_MINUTES` | `480` | Expiración del token (8h). |
-| `UPLOAD_DIR` | `uploads/products` | Directorio de imágenes de productos. |
-| `BRANDING_DIR` | `uploads/branding` | Directorio de logos e imágenes de branding. |
+| `UPLOAD_DIR` | `uploads/products` | Directorio local legacy usado solo para referencias previas al despliegue cloud. |
+| `BRANDING_DIR` | `uploads/branding` | Directorio local legacy usado solo para branding previo al despliegue cloud. |
+| `SUPABASE_URL` | `https://<project-ref>.supabase.co` | URL base del proyecto Supabase usada para Storage público. |
+| `SUPABASE_SECRET_KEY` | `<service-role-key-backend-only>` | Service role key del backend. Nunca debe exponerse al frontend. |
+| `SUPABASE_PRODUCTS_BUCKET` | `products` | Bucket público para imágenes nuevas de productos. |
+| `SUPABASE_MEDIA_BUCKET` | `media` | Bucket público para branding nuevo. |
+| `SUPABASE_BRANDING_PREFIX` | `branding` | Prefijo POSIX dentro del bucket `media` para logo y favicon. |
 
 ### Conectar una instancia MongoDB externa nueva
 
@@ -180,8 +188,8 @@ Las semillas son idempotentes: un arranque limpio crea colecciones, índices y d
 | PUT | `/api/v1/products/{id}` | ****** Actualizar producto (acepta `colors`, `description`, `brand`, `tags`, `category_ids`; retorna 422 si algún category_id es inválido) |
 | DELETE | `/api/v1/products/{id}` | Bearer | Eliminar producto |
 | PUT | `/api/v1/products/{id}/colors` | Bearer | Gestionar colores del producto (máx 6) |
-| POST | `/api/v1/products/{id}/image` | ****** Subir una imagen (PNG/JPEG/WebP, max 2MB, hasta 10 por producto) |
-| DELETE | `/api/v1/products/{id}/images/{filename}` | ****** Eliminar una imagen especifica |
+| POST | `/api/v1/products/{id}/image` | ****** Subir una imagen (PNG/JPEG/WebP, max 2MB, hasta 10 por producto; persiste URL pública en Supabase) |
+| DELETE | `/api/v1/products/{id}/images/{filename}` | ****** Eliminar una imagen específica por basename sin cambiar el contrato del endpoint |
 | POST | `/api/v1/products/import` | Bearer | Importar desde Excel (.xlsx) |
 
 #### Búsqueda y filtrado — `GET /api/v1/products/search`
@@ -284,10 +292,10 @@ Ejemplo de respuesta `GET /api/v1/budgets/{uuid}/whatsapp-share`:
 | GET | `/api/v1/config/payment-methods` | — | Listar métodos de pago dinámicos |
 | POST | `/api/v1/config/payment-methods` | Requerida | Agregar método de pago dinámico |
 | DELETE | `/api/v1/config/payment-methods/{method_name}` | Requerida | Eliminar método de pago dinámico |
-| POST | `/api/v1/config/logo` | Requerida | Subir logo explícito (solo PNG/JPG) |
+| POST | `/api/v1/config/logo` | Requerida | Subir logo explícito (solo PNG/JPG) a `media/branding` en Supabase |
 | GET | `/api/v1/config/{key}` | — | Obtener config por clave |
 | PUT | `/api/v1/config/{key}` | Requerida | Actualizar config |
-| POST | `/api/v1/config/branding/{key}` | Requerida | Subir branding legacy (`site_logo`, `site_icon`) |
+| POST | `/api/v1/config/branding/{key}` | Requerida | Subir branding compatible (`site_logo`, `site_icon`) a `media/branding` manteniendo el endpoint |
 | DELETE | `/api/v1/config/branding/{key}` | Requerida | Eliminar logo o icono |
 
 ### Frontend Web
@@ -345,9 +353,11 @@ Los tests usan una BD separada (`budget_maker_test`) que se elimina al finalizar
 - La visibilidad de fotos en PDF está gobernada por `show_product_photos_in_pdf`; si está en `false`, se oculta la columna completa.
 - La resolución de imágenes para PDF se consulta por lote de SKU para evitar patrón `N+1` durante el render.
 - En rutas de descarga PDF (`/api/v1/budgets/{uuid}/pdf` y `/presupuesto/{uuid}/pdf`) los presupuestos expirados retornan HTTP 410.
-- Las imágenes se almacenan en `uploads/products/` (montado como volumen Docker)
-- Formatos de imagen permitidos: PNG, JPEG, WebP. Tamaño máximo: 2MB
-- Cada producto soporta entre 0 y 10 imagenes; la API responde `image_urls` con URLs absolutas
+- Los uploads nuevos de productos se almacenan en Supabase Storage (`products`) y persisten `image_urls` públicas absolutas.
+- Logo y favicon nuevos se almacenan en Supabase Storage (`media/branding`) con URLs públicas absolutas.
+- `uploads/products/` y `uploads/branding/` permanecen montados solo para compatibilidad con referencias legacy previas al despliegue cloud.
+- Formatos de imagen permitidos: PNG, JPEG, WebP para productos; PNG/JPG para logo y PNG/JPEG/WebP/SVG/ICO para favicon. Tamaño máximo: 2MB
+- Cada producto soporta entre 0 y 10 imagenes; la API responde `image_urls` con URLs absolutas sin requerir SDK Supabase en frontend.
 - Cada producto soporta entre 0 y 15 tags; el backend los normaliza a minusculas y sin espacios laterales
 - WeasyPrint requiere `pydyf==0.11.*` (incompatibilidad con 0.12+)
 - MongoDB text index en `Product.name` para búsqueda full-text
@@ -404,7 +414,7 @@ El archivo `.xlsx` debe tener estas columnas (primera fila como headers):
   "unit": "unidad",
   "currency": "USD",
   "image_urls": [
-    "http://localhost:8000/uploads/products/66cf00000000000000000001_ab12cd34.png"
+    "https://tu-proyecto.supabase.co/storage/v1/object/public/products/66cf00000000000000000001/ab12cd34ef56ab78cd90ef12ab34cd56.png"
   ],
   "tags": ["ferreteria", "galvanizado"],
   "category_ids": [],

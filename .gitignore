@@ -9,3 +9,5 @@ build/
 .venv/
 venv/
 uploads/products/
+uploads/branding/
+supabase/.temp/

@@ -9,6 +9,11 @@ services:
     environment:
       MONGO_URI: ${MONGO_URI}
       MONGO_DB_NAME: ${MONGO_DB_NAME}
+      SUPABASE_URL: ${SUPABASE_URL:-}
+      SUPABASE_SECRET_KEY: ${SUPABASE_SECRET_KEY:-}
+      SUPABASE_PRODUCTS_BUCKET: ${SUPABASE_PRODUCTS_BUCKET:-products}
+      SUPABASE_MEDIA_BUCKET: ${SUPABASE_MEDIA_BUCKET:-media}
+      SUPABASE_BRANDING_PREFIX: ${SUPABASE_BRANDING_PREFIX:-branding}
     volumes:
       - .:/app
       - ./uploads:/app/uploads
