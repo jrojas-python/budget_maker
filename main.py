@@ -16,7 +16,7 @@ from app.api.v1.config import router as config_router
 from app.api.v1.products import router as products_router
 from app.api.v1.users import router as users_router
 from app.api.dependencies import get_auth_use_cases, get_config_use_cases
-from settings.config import settings
+from settings.config import Settings, settings
 from web.views import router as web_router
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(name)s | %(levelname)s | %(message)s")
@@ -40,28 +40,35 @@ async def lifespan(app: FastAPI):
         await close_db()
 
 
-app = FastAPI(
-    title="Budget Maker API",
-    description="API de generación de presupuestos/cotizaciones",
-    version="0.2.0",
-    lifespan=lifespan,
-)
+def create_app(app_settings: Settings) -> FastAPI:
+    """Crea la aplicación FastAPI con su política CORS configurada."""
+    application = FastAPI(
+        title="Budget Maker API",
+        description="API de generación de presupuestos/cotizaciones",
+        version="0.2.0",
+        lifespan=lifespan,
+    )
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.cors_allowed_origins,
-    allow_credentials=False,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type"],
-)
+    application.add_middleware(
+        CORSMiddleware,
+        allow_origins=app_settings.cors_allowed_origins,
+        allow_credentials=False,
+        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type"],
+    )
 
-app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
-app.mount("/static", StaticFiles(directory="web/static"), name="static")
+    application.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+    application.mount("/static", StaticFiles(directory="web/static"), name="static")
 
-app.include_router(auth_router)
-app.include_router(users_router)
-app.include_router(config_router)
-app.include_router(categories_router)
-app.include_router(products_router)
-app.include_router(budgets_router)
-app.include_router(web_router)
+    application.include_router(auth_router)
+    application.include_router(users_router)
+    application.include_router(config_router)
+    application.include_router(categories_router)
+    application.include_router(products_router)
+    application.include_router(budgets_router)
+    application.include_router(web_router)
+
+    return application
+
+
+app = create_app(settings)

@@ -72,23 +72,32 @@ Se usará una cadena separada por comas en `CORS_ALLOWED_ORIGINS` para evitar la
 
 ## Suggested Review Order
 
-**Integración CORS**
+**Integración de la aplicación**
 
-- Registra la política CORS restrictiva antes de montar rutas y archivos estáticos.
-  [`main.py:50`](../../main.py#L50)
+- Centraliza la creación de FastAPI para aplicar cualquier configuración CORS validada.
+  [`main.py:43`](../../main.py#L43)
+
+- Registra métodos, cabeceras y credenciales explícitas antes de rutas y archivos estáticos.
+  [`main.py:52`](../../main.py#L52)
 
 **Configuración y normalización**
 
-- Limpia orígenes configurados y rechaza patrones comodín.
+- Limpia espacios, barras, duplicados y comodines sin aceptar listas vacías.
   [`config.py:13`](../../settings/config.py#L13)
 
-- Expone la variable de entorno con el dominio productivo por defecto.
-  [`config.py:110`](../../settings/config.py#L110)
+- Expone el dominio productivo exacto mediante la variable de entorno.
+  [`config.py:113`](../../settings/config.py#L113)
 
 **Verificación y operación**
 
-- Comprueba preflight, respuesta permitida, rechazo y parsing desde entorno.
-  [`test_cors.py:22`](../../tests/test_cors.py#L22)
+- Verifica preflight para todos los métodos usados por la API.
+  [`test_cors.py:23`](../../tests/test_cors.py#L23)
+
+- Comprueba rechazo simple y preflight de orígenes no configurados.
+  [`test_cors.py:61`](../../tests/test_cors.py#L61)
+
+- Confirma el dominio predeterminado y múltiples orígenes a través del middleware.
+  [`test_cors.py:99`](../../tests/test_cors.py#L99)
 
 - Documenta la configuración completa de orígenes autorizados en Render.
   [`README.md:126`](../../README.md#L126)
@@ -96,5 +105,5 @@ Se usará una cadena separada por comas en `CORS_ALLOWED_ORIGINS` para evitar la
 - Publica el valor productivo seguro en el contrato de entorno.
   [`.env.example:19`](../../.env.example#L19)
 
-- Registra la iteración y sus archivos modificados.
+- Registra implementación, revisión y cobertura incorporada.
   [`changelog.md:7`](../../.agents/changelog.md#L7)

@@ -24,6 +24,9 @@ def normalize_cors_allowed_origins(value: str | list[str]) -> list[str]:
         if normalized_origin not in normalized_origins:
             normalized_origins.append(normalized_origin)
 
+    if not normalized_origins:
+        raise ValueError("CORS_ALLOWED_ORIGINS requiere al menos un origen.")
+
     return normalized_origins
 
 
