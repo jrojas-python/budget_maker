@@ -4,6 +4,25 @@ Registro de iteraciones del proyecto.
 
 ---
 
+## [2026-09-13] Iteración 13 — CORS para frontend productivo de Vercel
+
+### Realizado
+- Se añadió `CORS_ALLOWED_ORIGINS` como configuración separada por comas, con normalización de espacios, barras finales, entradas vacías y duplicados.
+- Se rechazaron explícitamente comodines para conservar una política de orígenes restrictiva.
+- Se registró `CORSMiddleware` con el frontend productivo de Vercel permitido por defecto y métodos/cabeceras requeridos por la API.
+- Se documentó la configuración de orígenes adicionales en Render y se añadieron pruebas aisladas para preflight permitido, origen rechazado y parsing.
+
+### Archivos modificados
+- `settings/config.py`
+- `main.py`
+- `.env.example`
+- `README.md`
+- `tests/test_cors.py`
+- `.agents/changelog.md`
+- `_bmad-output/implementation-artifacts/spec-permitir-frontend-vercel-cors.md`
+
+---
+
 ## [2026-09-13] Iteración 12 — Conexión MongoDB configurable local y externa
 
 ### Realizado

@@ -64,6 +64,7 @@ budget_maker/
 3. Mantén `MONGO_DB_NAME=budget_maker`.
 4. Configura `TEST_MONGO_URI` para que apunte **solo** a `budget_maker_test` en `localhost` con autenticación.
 5. Ajusta `MONGO_LOCAL_ROOT_USERNAME` y `MONGO_LOCAL_ROOT_PASSWORD` para el stack Docker local. Usa una contraseña alfanumérica sin caracteres reservados de URI, porque Docker Compose interpola estas credenciales tanto como valores literales del servidor como dentro de la URI del cliente.
+6. Mantén `CORS_ALLOWED_ORIGINS=https://budget-maker-frontend.vercel.app` para el frontend productivo. Para autorizar otros frontends en Render, agrega sus orígenes separados por comas, sin rutas; los espacios y las barras finales se normalizan.
 
 `.env.example` ya incluye:
 - un ejemplo sanitizado de Atlas,
@@ -105,6 +106,7 @@ Si ya existía un volumen local anónimo, el contenedor intenta crear el usuario
 | `TEST_MONGO_URI` | `mongodb://bm_local_admin:cambia-esta-clave-local@localhost:27017/budget_maker_test?authSource=admin` | URI exclusiva de pruebas. Nunca debe apuntar a Atlas ni a otra base. |
 | `MONGO_LOCAL_ROOT_USERNAME` | `bm_local_admin` | Usuario raíz usado por el MongoDB local autenticado del stack Docker. |
 | `MONGO_LOCAL_ROOT_PASSWORD` | `cambia-esta-clave-local` | Contraseña raíz usada por MongoDB local, `api` y `mongo-express`. |
+| `CORS_ALLOWED_ORIGINS` | `https://budget-maker-frontend.vercel.app` | Orígenes CORS explícitos separados por comas. No admite comodines; para conservar el frontend productivo al añadir otro origen, incluye ambos valores. |
 | `JWT_SECRET_KEY` | `change-me-in-production` | Secreto JWT (cambiar en producción). |
 | `JWT_ALGORITHM` | `HS256` | Algoritmo JWT. |
 | `JWT_EXPIRE_MINUTES` | `480` | Expiración del token (8h). |
@@ -120,6 +122,14 @@ Si ya existía un volumen local anónimo, el contenedor intenta crear el usuario
 5. Inicia la API; durante el lifespan se ejecuta `init_db()`, se valida la conexión con `ping`, Beanie registra colecciones/índices y luego se crean de forma idempotente la configuración global y el superadministrador.
 
 Si la URI es inválida, falla DNS/red o la autenticación es incorrecta, el arranque falla de forma visible; la aplicación no degrada silenciosamente a una conexión anónima.
+
+En Render, configura `CORS_ALLOWED_ORIGINS` con la lista completa de frontends autorizados, por ejemplo:
+
+```dotenv
+CORS_ALLOWED_ORIGINS=https://budget-maker-frontend.vercel.app,https://admin.example.com
+```
+
+No uses `*` ni patrones para previews de Vercel. Cada preview debe declararse explícitamente si se decide autorizarlo.
 
 ### Datos Iniciales (Seeds)
 

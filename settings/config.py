@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from urllib.parse import parse_qs, urlsplit, urlunsplit
 
 from pydantic import Field, field_validator
@@ -5,6 +7,24 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 TEST_MONGO_DB_NAME = "budget_maker_test"
 LOCAL_TEST_MONGO_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
+DEFAULT_CORS_ALLOWED_ORIGIN = "https://budget-maker-frontend.vercel.app"
+
+
+def normalize_cors_allowed_origins(value: str | list[str]) -> list[str]:
+    """Normaliza una lista o cadena de orígenes CORS sin aceptar comodines."""
+    origins = value.split(",") if isinstance(value, str) else value
+    normalized_origins: list[str] = []
+
+    for origin in origins:
+        normalized_origin = origin.strip().rstrip("/")
+        if not normalized_origin:
+            continue
+        if "*" in normalized_origin:
+            raise ValueError("CORS_ALLOWED_ORIGINS no permite patrones comodín.")
+        if normalized_origin not in normalized_origins:
+            normalized_origins.append(normalized_origin)
+
+    return normalized_origins
 
 
 def validate_mongo_uri(value: str) -> str:
@@ -87,6 +107,10 @@ class Settings(BaseSettings):
     )
     app_host: str = Field(default="0.0.0.0", validation_alias="APP_HOST")
     app_port: int = Field(default=8000, validation_alias="APP_PORT")
+    cors_allowed_origins: list[str] | str = Field(
+        default=DEFAULT_CORS_ALLOWED_ORIGIN,
+        validation_alias="CORS_ALLOWED_ORIGINS",
+    )
 
     # JWT
     jwt_secret_key: str = Field(default="change-me-in-production", validation_alias="JWT_SECRET_KEY")
@@ -120,6 +144,11 @@ class Settings(BaseSettings):
         if not mongo_db_name:
             raise ValueError("MONGO_DB_NAME no puede estar vacío.")
         return mongo_db_name
+
+    @field_validator("cors_allowed_origins", mode="before")
+    @classmethod
+    def _normalize_cors_allowed_origins(cls, value: str | list[str]) -> list[str]:
+        return normalize_cors_allowed_origins(value)
 
     def masked_mongo_uri(self) -> str:
         """Retorna la URI principal sin exponer la contraseña."""
