@@ -13,6 +13,7 @@ Registro de iteraciones del proyecto.
 - El render de presupuestos/PDF ahora reconoce URLs públicas HTTPS para logo e imágenes de producto y mantiene fallback local solo para referencias legacy.
 - Se añadió una migración declarativa de Supabase para los buckets públicos `products` y `media`, junto con variables de entorno/documentación operativa para la transición.
 - Las pruebas ahora inyectan un fake de Storage en `tests/conftest.py` y cubren uploads cloud, limpieza/rollback, branding remoto y compatibilidad legacy sin tocar Supabase real.
+- La revisión final endureció HTTPS, lectura acotada de uploads, rechazo de archivos vacíos, aislamiento de borrados por producto/clave de branding y limpieza de objetos cuando falla la obtención de su URL pública.
 
 ### Archivos modificados
 - `settings/config.py`
@@ -38,6 +39,21 @@ Registro de iteraciones del proyecto.
 - `.agents/changelog.md`
 - `supabase/migrations/20260914024000_storage_buckets.sql`
 - `_bmad-output/implementation-artifacts/spec-migracion-imagenes-supabase-storage.md`
+
+---
+
+## [2026-09-14] Iteración 15 — Script de asignación masiva de marca/categorías/colores/tags
+
+### Realizado
+- Se añadió un script operativo para actualizar todos los productos existentes directamente en MongoDB con metadatos de catálogo: marca inventada, categorías aleatorias, colores y tags.
+- El script crea de forma idempotente 10 categorías base inventadas si aún no existen y luego distribuye aleatoriamente `category_ids` en cada producto.
+- Se agregaron opciones CLI `--seed` (reproducibilidad) y `--dry-run` (simulación sin persistencia).
+- Se documentó el uso del script en README con su comportamiento y parámetros.
+
+### Archivos modificados
+- `scripts/bulk_assign_product_catalog_metadata.py`
+- `README.md`
+- `.agents/changelog.md`
 
 ---
 
