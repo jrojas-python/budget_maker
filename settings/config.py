@@ -7,7 +7,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 TEST_MONGO_DB_NAME = "budget_maker_test"
 LOCAL_TEST_MONGO_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
-DEFAULT_CORS_ALLOWED_ORIGIN = "https://budget-maker-frontend.vercel.app"
+DEFAULT_CORS_ALLOWED_ORIGIN = (
+    "https://budget-maker-frontend.vercel.app,http://localhost:3000,http://localhost:3001"
+)
 
 
 def normalize_cors_allowed_origins(value: str | list[str]) -> list[str]:

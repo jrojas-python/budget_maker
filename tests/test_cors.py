@@ -117,9 +117,13 @@ def test_settings_uses_exact_production_origin_by_default(
 
     configured_settings = Settings(_env_file=None)
 
-    assert DEFAULT_CORS_ALLOWED_ORIGIN == "https://budget-maker-frontend.vercel.app"
+    assert DEFAULT_CORS_ALLOWED_ORIGIN == (
+        "https://budget-maker-frontend.vercel.app,http://localhost:3000,http://localhost:3001"
+    )
     assert configured_settings.cors_allowed_origins == [
-        "https://budget-maker-frontend.vercel.app"
+        "https://budget-maker-frontend.vercel.app",
+        "http://localhost:3000",
+        "http://localhost:3001",
     ]
 
 

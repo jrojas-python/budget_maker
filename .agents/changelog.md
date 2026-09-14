@@ -4,6 +4,22 @@ Registro de iteraciones del proyecto.
 
 ---
 
+## [2026-09-14] Iteración 14 — CORS para localhost 3000 y 3001
+
+### Realizado
+- Se añadieron `http://localhost:3000` y `http://localhost:3001` a los orígenes CORS por defecto junto al frontend productivo.
+- Se actualizó el ejemplo de `.env` y la documentación para reflejar la lista completa de orígenes permitidos.
+- Se ajustó la prueba de configuración por defecto para validar los tres orígenes autorizados.
+
+### Archivos modificados
+- `settings/config.py`
+- `tests/test_cors.py`
+- `.env.example`
+- `README.md`
+- `.agents/changelog.md`
+
+---
+
 ## [2026-09-13] Iteración 13 — CORS para frontend productivo de Vercel
 
 ### Realizado

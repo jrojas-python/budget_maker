@@ -64,7 +64,7 @@ budget_maker/
 3. Mantén `MONGO_DB_NAME=budget_maker`.
 4. Configura `TEST_MONGO_URI` para que apunte **solo** a `budget_maker_test` en `localhost` con autenticación.
 5. Ajusta `MONGO_LOCAL_ROOT_USERNAME` y `MONGO_LOCAL_ROOT_PASSWORD` para el stack Docker local. Usa una contraseña alfanumérica sin caracteres reservados de URI, porque Docker Compose interpola estas credenciales tanto como valores literales del servidor como dentro de la URI del cliente.
-6. Mantén `CORS_ALLOWED_ORIGINS=https://budget-maker-frontend.vercel.app` para el frontend productivo. Para autorizar otros frontends en Render, agrega sus orígenes separados por comas, sin rutas; los espacios y las barras finales se normalizan.
+6. Mantén `CORS_ALLOWED_ORIGINS=https://budget-maker-frontend.vercel.app,http://localhost:3000,http://localhost:3001` para frontend productivo y desarrollo local. Para autorizar otros frontends en Render, agrega sus orígenes separados por comas, sin rutas; los espacios y las barras finales se normalizan.
 
 `.env.example` ya incluye:
 - un ejemplo sanitizado de Atlas,
@@ -106,7 +106,7 @@ Si ya existía un volumen local anónimo, el contenedor intenta crear el usuario
 | `TEST_MONGO_URI` | `mongodb://bm_local_admin:cambia-esta-clave-local@localhost:27017/budget_maker_test?authSource=admin` | URI exclusiva de pruebas. Nunca debe apuntar a Atlas ni a otra base. |
 | `MONGO_LOCAL_ROOT_USERNAME` | `bm_local_admin` | Usuario raíz usado por el MongoDB local autenticado del stack Docker. |
 | `MONGO_LOCAL_ROOT_PASSWORD` | `cambia-esta-clave-local` | Contraseña raíz usada por MongoDB local, `api` y `mongo-express`. |
-| `CORS_ALLOWED_ORIGINS` | `https://budget-maker-frontend.vercel.app` | Orígenes CORS explícitos separados por comas. No admite comodines; para conservar el frontend productivo al añadir otro origen, incluye ambos valores. |
+| `CORS_ALLOWED_ORIGINS` | `https://budget-maker-frontend.vercel.app,http://localhost:3000,http://localhost:3001` | Orígenes CORS explícitos separados por comas. No admite comodines; para conservar el frontend productivo al añadir otro origen, incluye la lista completa. |
 | `JWT_SECRET_KEY` | `change-me-in-production` | Secreto JWT (cambiar en producción). |
 | `JWT_ALGORITHM` | `HS256` | Algoritmo JWT. |
 | `JWT_EXPIRE_MINUTES` | `480` | Expiración del token (8h). |
