@@ -294,7 +294,7 @@ Ejemplo de respuesta `GET /api/v1/budgets/{uuid}/whatsapp-share`:
 | DELETE | `/api/v1/config/payment-methods/{method_name}` | Requerida | Eliminar método de pago dinámico |
 | POST | `/api/v1/config/logo` | Requerida | Subir logo explícito (solo PNG/JPG) a `media/branding` en Supabase |
 | GET | `/api/v1/config/{key}` | — | Obtener config por clave |
-| PUT | `/api/v1/config/{key}` | Requerida | Actualizar config |
+| PUT | `/api/v1/config/{key}` | Requerida | Actualizar config; `site_logo` y `site_icon` solo aceptan referencias administradas y deben cargarse mediante sus endpoints multipart |
 | POST | `/api/v1/config/branding/{key}` | Requerida | Subir branding compatible (`site_logo`, `site_icon`) a `media/branding` manteniendo el endpoint |
 | DELETE | `/api/v1/config/branding/{key}` | Requerida | Eliminar logo o icono |
 
@@ -378,6 +378,28 @@ El archivo `.xlsx` debe tener estas columnas (primera fila como headers):
 **Regla de colisión:** Si el SKU ya existe → actualiza. Si no → crea.
 
 **Tags:** Columna opcional. Separar múltiples tags por comas. Se normalizan a minúsculas, se eliminan duplicados y se limitan a 15 por producto.
+
+## Script de asignación masiva de metadatos de catálogo
+
+Para poblar rápidamente productos existentes con **marca inventada**, **categorías aleatorias**, **colores** y **tags**, usa:
+
+```bash
+python scripts\bulk_assign_product_catalog_metadata.py
+```
+
+Opciones disponibles:
+
+- `--seed <int>`: fija la semilla para obtener resultados reproducibles.
+- `--dry-run`: simula la asignación sin escribir cambios en MongoDB.
+
+Comportamiento:
+- Crea (si no existen) 10 categorías base inventadas.
+- Recorre todos los productos de la colección `products`.
+- Asigna a cada producto:
+  - 1 marca aleatoria,
+  - 1 a 3 categorías aleatorias (`category_ids`),
+  - 1 a 3 colores con nombre + hex,
+  - 3 a 6 tags aleatorios.
 
 ## Colores de Producto
 
