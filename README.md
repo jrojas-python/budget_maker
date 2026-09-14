@@ -63,12 +63,12 @@ budget_maker/
    - **MongoDB local autenticado:** usa una URI `mongodb://` con usuario, contraseña y `authSource=admin`.
 3. Mantén `MONGO_DB_NAME=budget_maker`.
 4. Configura `TEST_MONGO_URI` para que apunte **solo** a `budget_maker_test` en `localhost` con autenticación.
-5. Ajusta `MONGO_LOCAL_ROOT_USERNAME` y `MONGO_LOCAL_ROOT_PASSWORD` para el stack Docker local. Evita `@ : / ? # %` en la contraseña: Docker Compose la interpola directamente dentro de una URI Mongo y esos caracteres la romperían; si necesitas usarlos, aplica percent-encoding manualmente.
+5. Ajusta `MONGO_LOCAL_ROOT_USERNAME` y `MONGO_LOCAL_ROOT_PASSWORD` para el stack Docker local. Usa una contraseña alfanumérica sin caracteres reservados de URI, porque Docker Compose interpola estas credenciales tanto como valores literales del servidor como dentro de la URI del cliente.
 
 `.env.example` ya incluye:
 - un ejemplo sanitizado de Atlas,
 - las credenciales locales requeridas por Docker Compose,
-- una URI local autenticada comentada para el contenedor `api`,
+- una URI local autenticada comentada para alternar `MONGO_URI`,
 - y la URI aislada de pruebas.
 
 ### Iniciar entorno local completo
@@ -94,7 +94,7 @@ Si ya existía un volumen local anónimo, el contenedor intenta crear el usuario
 |----------|-----|
 | Aplicación | http://localhost:8000 |
 | Swagger UI | http://localhost:8000/docs |
-| mongo-express | http://localhost:8081 |
+| mongo-express | http://localhost:8081 (solo desarrollo local; la interfaz web no tiene autenticación HTTP) |
 
 ### Variables de Entorno
 
@@ -128,7 +128,7 @@ Al iniciar, la app crea automáticamente:
 - **Configuración global tipada:** `tax_rate` (18), `link_ttl_minutes` (30), `show_product_photos_in_pdf` (`true`)
 - **Configuración auxiliar:** `site_title`, `site_subtitle`
 
-Las semillas son idempotentes: un arranque limpio crea colecciones, índices y datos iniciales; reinicios posteriores no duplican ni la configuración global ni el superadministrador. Si conectas una base externa compartida o productiva, cambia la contraseña del superadmin (`DEFAULT_ADMIN_PASSWORD`) inmediatamente después del primer arranque; las credenciales por defecto son solo para desarrollo local.
+Las semillas son idempotentes: un arranque limpio crea colecciones, índices y datos iniciales; reinicios posteriores no duplican ni la configuración global ni el superadministrador. En una base externa compartida o productiva, configura `DEFAULT_ADMIN_USERNAME`, `DEFAULT_ADMIN_PASSWORD` y `DEFAULT_ADMIN_EMAIL` **antes del primer arranque**. Cambiar esas variables después no rota un usuario existente; la rotación posterior debe realizarse mediante la gestión de usuarios.
 
 ## Referencia API
 
@@ -396,21 +396,3 @@ El archivo `.xlsx` debe tener estas columnas (primera fila como headers):
   "colors": []
 }
 ```
-
-## Variables de Entorno
-
-| Variable | Default | Descripción |
-|----------|---------|-------------|
-| `MONGO_URI` | `mongodb://mongodb:27017` | URI de MongoDB |
-| `MONGO_DB_NAME` | `budget_maker` | Nombre de la BD |
-| `JWT_SECRET_KEY` | `change-me-in-production` | Secreto JWT (cambiar en producción) |
-| `JWT_ALGORITHM` | `HS256` | Algoritmo JWT |
-| `JWT_EXPIRE_MINUTES` | `480` | Expiración del token (8h) |
-| `UPLOAD_DIR` | `uploads/products` | Directorio de imágenes |
-
-### Datos Iniciales (Seeds)
-
-Al iniciar, la app crea automáticamente:
-- **Superadmin:** usuario `admin` / contraseña `admin1234`
-- **Configuración global tipada:** `tax_rate` (18), `link_ttl_minutes` (30), `show_product_photos_in_pdf` (`true`)
-- **Configuración auxiliar:** `site_title`, `site_subtitle`

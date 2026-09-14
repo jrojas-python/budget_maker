@@ -21,14 +21,16 @@ TEST_MONGO_URI = ensure_safe_test_mongo_uri(TEST_SETTINGS.test_mongo_uri, expect
 async def _init_db():
     """Inicializa la base de datos de test por caso de prueba."""
     client = AsyncIOMotorClient(TEST_MONGO_URI)
-    db = client[TEST_DB_NAME]
-    await init_beanie(
-        database=db,
-        document_models=[GlobalConfig, Product, Budget, User, Category],
-    )
-    yield db
-    await client.drop_database(TEST_DB_NAME)
-    client.close()
+    try:
+        db = client[TEST_DB_NAME]
+        await init_beanie(
+            database=db,
+            document_models=[GlobalConfig, Product, Budget, User, Category],
+        )
+        yield db
+    finally:
+        await client.drop_database(TEST_DB_NAME)
+        client.close()
 
 
 @pytest_asyncio.fixture(autouse=True)

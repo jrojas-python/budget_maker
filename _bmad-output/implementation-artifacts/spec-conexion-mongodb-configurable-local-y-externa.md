@@ -70,6 +70,7 @@ context:
 
 - 2026-09-13: Implementada la conexión MongoDB configurable con validación de URI, stack Docker local autenticado, bootstrap idempotente del usuario raíz en volúmenes previos, aislamiento estricto de `TEST_MONGO_URI`, documentación actualizada y cobertura de verificación para configuración, seeds e índices.
 - 2026-09-13 (revisión post-implementación): `blind-hunter`, `edge-case-hunter` y `verification-gap` revisaron el diff. Hallazgos `patch` aplicados: `app/database.py` ahora cierra y descarta el cliente Motor si `ping`/`init_beanie` fallan (evita fugas de conexión en reintentos); `settings/config.py::ensure_safe_test_mongo_uri` ahora exige contraseña no vacía y nombre de base explícito `budget_maker_test`; se añadieron pruebas para las ramas de `TEST_MONGO_URI` sin credenciales, sin `authSource=admin` y sin base explícita; se añadió una prueba que ejercita el `lifespan` real de `main.py` para asegurar que `init_db`/seeds/`close_db` se invocan en orden; se documentó en `README.md`/`.env.example` el riesgo de caracteres reservados de URI en `MONGO_LOCAL_ROOT_PASSWORD` y la necesidad de rotar el superadmin por defecto ante una base externa compartida. Hallazgo `defer`: `mongo-express` sin autenticación propia (`ME_CONFIG_BASICAUTH=false`) es preexistente a esta historia, registrado en `deferred-work.md`. Se descartó por falso positivo un hallazgo de "bucle infinito" en `docker/mongodb-entrypoint.sh`: se verificó manualmente contra un contenedor real que `ping` no requiere autenticación en MongoDB, por lo que el bucle de espera nunca cuelga.
+- 2026-09-13 (revisión formal del workflow): se corrigió `.env` para activar exactamente la URI Atlas solicitada, conservar comentada la URI local y aplicar las credenciales solicitadas al Mongo local y a pruebas. Se bloquearon URIs de prueba con múltiples hosts o `authSource` ambiguo; `init_db` preserva el cliente anterior si un reintento falla y limpia cancelaciones; los fixtures cierran Motor con `finally`; el script Docker obtiene credenciales desde el entorno sin interpolarlas en JavaScript y `.gitattributes` fuerza LF. También se eliminaron instrucciones duplicadas o incorrectas del README y se añadieron pruebas de aliases, fallos de Beanie y fallos de seeds.
 
 ## Design Notes
 
@@ -85,7 +86,9 @@ La separación `MONGO_URI`/`TEST_MONGO_URI` es una barrera de seguridad, no solo
 **Results:**
 - `docker compose config` -- OK. La interpolación resolvió `MONGO_URI`, credenciales locales, `mongo-express` autenticado y el bootstrap del contenedor Mongo.
 - `docker compose up -d mongodb` -- OK. El contenedor quedó `healthy`; se confirmó manualmente contra el contenedor real que una escritura sin credenciales (`insertOne`) es rechazada con `Command insert requires authentication`, mientras que `bm_local_admin` autentica correctamente (el `ping` no autenticado siempre responde por diseño de MongoDB y no representa una brecha).
-- `python -m pytest` -- OK. `102 passed` (97 originales + 5 de la revisión post-implementación); la suite ejerció la nueva validación de URIs `mongodb://`/`mongodb+srv://`, el aislamiento de `TEST_MONGO_URI` incluyendo credenciales/`authSource`/base faltantes, la propagación visible de fallos de conexión con limpieza del cliente Motor, el `lifespan` real de `main.py`, y la idempotencia de seeds/índices.
+- `python -m pytest` -- OK. `109 passed`; la suite ejerció la carga por variables de entorno, validación de URIs `mongodb://`/`mongodb+srv://`, aislamiento de `TEST_MONGO_URI` incluyendo múltiples hosts y `authSource` ambiguo, limpieza ante fallos de conexión/Beanie/seeds, el `lifespan` real de `main.py` y la idempotencia de seeds/índices.
+- Conexión externa -- OK. Se ejecutó `ping` contra la URI Atlas activa en `.env` sobre `budget_maker`.
+- Autenticación local -- OK. `bm_local_admin` autenticó con la contraseña solicitada y una escritura anónima fue rechazada.
 
 ## Suggested Review Order
 
@@ -97,16 +100,16 @@ La separación `MONGO_URI`/`TEST_MONGO_URI` es una barrera de seguridad, no solo
 - Endurece `TEST_MONGO_URI`: exige host local, credenciales no vacías, `authSource=admin` y base `budget_maker_test` explícita.
   [`config.py:41`](../../settings/config.py#L41)
 
-- `Settings` expone `mongo_uri`/`test_mongo_uri` vía variables de entorno y aplica los validadores anteriores.
-  [`config.py:67`](../../settings/config.py#L67)
+- `Settings` enlaza variables de entorno y aplica validación segura al URI exclusivo de pruebas.
+  [`config.py:71`](../../settings/config.py#L71)
 
 **Conexión y ciclo de vida de Mongo**
 
 - `init_db` crea el cliente Motor, valida con `ping`, registra Beanie y solo publica el cliente global si todo tuvo éxito.
   [`database.py:12`](../../app/database.py#L12)
 
-- Si `ping`/`init_beanie` fallan, el cliente candidato se cierra y nunca queda expuesto como `mongo_client` global.
-  [`database.py:38`](../../app/database.py#L38)
+- Un reintento fallido conserva la conexión previa y cierra únicamente el cliente candidato.
+  [`database.py:12`](../../app/database.py#L12)
 
 - El `lifespan` de FastAPI encadena `init_db`, los seeds idempotentes y `close_db` en el `finally`.
   [`main.py:27`](../../main.py#L27)
@@ -119,18 +122,21 @@ La separación `MONGO_URI`/`TEST_MONGO_URI` es una barrera de seguridad, no solo
 - `mongodb` usa un entrypoint idempotente para crear el usuario raíz en volúmenes preexistentes y expone un healthcheck autenticado.
   [`docker-compose.yml:23`](../../docker-compose.yml#L23)
 
-- El script de arranque espera a Mongo, crea el usuario raíz si falta y verifica autenticación antes de continuar.
-  [`mongodb-entrypoint.sh:1`](../../docker/mongodb-entrypoint.sh#L1)
+- El bootstrap usa variables de entorno y detecta la terminación prematura de Mongo.
+  [`mongodb-entrypoint.sh:25`](../../docker/mongodb-entrypoint.sh#L25)
+
+- Los scripts shell conservan finales LF al clonarse en Windows.
+  [`.gitattributes:1`](../../.gitattributes#L1)
 
 **Pruebas y documentación**
 
-- Pruebas de validación/seguridad de configuración Mongo, incluyendo ramas de rechazo y limpieza del cliente ante fallos.
-  [`test_mongo_config.py:1`](../../tests/test_mongo_config.py#L1)
+- Pruebas cubren aliases, hosts múltiples, reintentos fallidos y cierre ante errores de seeds.
+  [`test_mongo_config.py:36`](../../tests/test_mongo_config.py#L36)
 
 - Aísla las pruebas con `TEST_MONGO_URI` en lugar de una conexión anónima fija.
   [`conftest.py:13`](../../tests/conftest.py#L13)
 
-- Documenta el flujo local/externo, el riesgo de caracteres reservados en la contraseña y la rotación del superadmin.
+- Documenta el flujo local/externo y la configuración del superadmin antes del primer arranque.
   [`README.md:58`](../../README.md#L58)
 
 - Contrato versionable de variables de entorno sin secretos reales.

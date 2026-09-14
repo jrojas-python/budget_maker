@@ -23,25 +23,28 @@ docker-entrypoint.sh mongod --auth --bind_ip_all &
 mongodb_pid=$!
 
 until auth_ping || local_ping; do
+  if ! kill -0 "$mongodb_pid" >/dev/null 2>&1; then
+    wait "$mongodb_pid"
+  fi
   sleep 2
 done
 
 if ! auth_ping; then
-  mongosh --quiet --eval "
-    const adminDb = db.getSiblingDB('admin');
+  mongosh --quiet --eval '
+    const adminDb = db.getSiblingDB("admin");
     try {
       adminDb.createUser({
-        user: '$ROOT_USER',
-        pwd: '$ROOT_PASSWORD',
-        roles: [{ role: 'root', db: 'admin' }],
+        user: process.env.MONGO_INITDB_ROOT_USERNAME,
+        pwd: process.env.MONGO_INITDB_ROOT_PASSWORD,
+        roles: [{ role: "root", db: "admin" }],
       });
     } catch (error) {
-      const message = String(error.message || '');
-      if (!message.includes('already exists') && !message.includes('duplicate')) {
+      const message = String(error.message || "");
+      if (!message.includes("already exists") && !message.includes("duplicate")) {
         throw error;
       }
     }
-  "
+  '
 fi
 
 auth_ping

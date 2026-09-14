@@ -19,8 +19,7 @@ async def init_db() -> None:
     from app.domain.models.product import Product
     from app.domain.models.user import User
 
-    if mongo_client is not None:
-        mongo_client.close()
+    previous_client = mongo_client
 
     logger.info(
         "Inicializando MongoDB con uri=%s y base=%s",
@@ -35,11 +34,13 @@ async def init_db() -> None:
             database=database,
             document_models=[GlobalConfig, Product, Budget, User, Category],
         )
-    except Exception:
+    except BaseException:
         candidate_client.close()
         raise
 
     mongo_client = candidate_client
+    if previous_client is not None:
+        previous_client.close()
     logger.info("Base de datos inicializada: %s", settings.mongo_db_name)
 
 

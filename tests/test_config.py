@@ -9,6 +9,7 @@ from app.domain.models.category import Category
 from app.domain.models.global_config import GlobalConfig
 from app.domain.models.product import Product
 from app.domain.models.user import User
+from settings.config import settings
 
 
 @pytest.mark.asyncio
@@ -32,7 +33,7 @@ async def test_init_beanie_and_seeds_are_idempotent_on_empty_database(_init_db):
     await auth_uc.seed_superadmin()
 
     assert await GlobalConfig.find_all().count() == 1
-    assert await User.find(User.username == "admin").count() == 1
+    assert await User.find(User.username == settings.default_admin_username).count() == 1
 
     global_config = await GlobalConfig.find_one(GlobalConfig.singleton_key == "global")
     assert global_config is not None

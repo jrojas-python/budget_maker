@@ -10,10 +10,11 @@ Registro de iteraciones del proyecto.
 - Se endureció `settings/config.py` para validar URIs `mongodb://` y `mongodb+srv://`, enmascarar credenciales en logs y bloquear `TEST_MONGO_URI` inseguros o remotos.
 - Se reforzó `app/database.py` para registrar la conexión sin secretos, ejecutar `ping` antes de `init_beanie` y cerrar el cliente global en el shutdown del lifespan.
 - Se autenticó el stack local en `docker-compose.yml` con usuario raíz configurable, `authSource=admin`, healthcheck de MongoDB, `mongo-express` autenticado y un bootstrap idempotente del usuario raíz para volúmenes locales preexistentes.
-- Se creó `.env.example` con ejemplos sanitizados para Atlas/local y se actualizó `.env` ignorado con perfil local autenticado, credenciales Docker y URI exclusiva de pruebas.
+- Se creó `.env.example` con ejemplos sanitizados para Atlas/local y se actualizó `.env` ignorado con la URI Atlas solicitada, la conexión local comentada, las credenciales Docker solicitadas y una URI exclusiva de pruebas.
 - Se migraron las pruebas a `TEST_MONGO_URI`, se añadieron pruebas de validación/seguridad de configuración Mongo y se verificó la idempotencia de seeds e índices declarados.
 - Se actualizó README con el flujo para alternar entre MongoDB local y externo, allowlist de Atlas, arranque limpio y la inicialización automática de Beanie/seeds.
-- **Revisión post-implementación** (`blind-hunter`, `edge-case-hunter`, `verification-gap`): `app/database.py` ahora cierra el cliente Motor si `ping`/`init_beanie` fallan; `ensure_safe_test_mongo_uri` exige contraseña no vacía y base `budget_maker_test` explícita; se añadieron pruebas para credenciales/`authSource`/base faltantes en `TEST_MONGO_URI` y una prueba del `lifespan` real de `main.py`; se documentó en README/`.env.example` el riesgo de caracteres reservados en `MONGO_LOCAL_ROOT_PASSWORD` y la rotación del superadmin ante bases externas compartidas.
+- **Revisión post-implementación** (`blind-hunter`, `edge-case-hunter`, `verification-gap`): `app/database.py` limpia clientes fallidos y preserva la conexión previa en reintentos; `ensure_safe_test_mongo_uri` exige un único host local, credenciales, base `budget_maker_test` y un solo `authSource=admin`; se añadieron pruebas de aliases de entorno, fallos de Beanie/seeds y cierre de recursos; el script de Mongo evita interpolar credenciales en JavaScript y `.gitattributes` fuerza finales LF; README elimina instrucciones duplicadas y aclara la configuración inicial del superadmin.
+- Se verificó la URI Atlas configurada mediante `ping`, se rotó sin pérdida de datos la contraseña del volumen Mongo local existente, se confirmó la autenticación del usuario solicitado y el rechazo de escrituras anónimas.
 
 ### Archivos modificados
 - `settings/config.py`
@@ -23,6 +24,7 @@ Registro de iteraciones del proyecto.
 - `docker/mongodb-entrypoint.sh`
 - `.env`
 - `.env.example`
+- `.gitattributes`
 - `.gitignore`
 - `tests/conftest.py`
 - `tests/test_config.py`

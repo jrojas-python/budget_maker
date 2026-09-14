@@ -21,9 +21,7 @@ def test_settings_accept_standard_and_srv_mongo_uris():
 
     assert local_settings.mongo_uri.startswith("mongodb://")
     assert atlas_settings.mongo_uri.startswith("mongodb+srv://")
-    assert atlas_settings.masked_mongo_uri() == (
-        "mongodb+srv://atlas_user:******@cluster0.example.mongodb.net/?retryWrites=true&w=majority"
-    )
+    assert atlas_settings.masked_mongo_uri() == "mongodb+srv://atlas_user:******@cluster0.example.mongodb.net/"
 
 
 def test_settings_reject_invalid_mongo_scheme():
@@ -33,6 +31,47 @@ def test_settings_reject_invalid_mongo_scheme():
             mongo_uri="postgresql://localhost:5432/budget_maker",
             test_mongo_uri="mongodb://bm_local_admin:bm_local_password@localhost:27017/budget_maker_test?authSource=admin",
         )
+
+
+def test_settings_load_mongo_environment_aliases(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv(
+        "MONGO_URI",
+        "mongodb+srv://atlas_user:atlas_password@cluster0.example.mongodb.net/?retryWrites=true&w=majority",
+    )
+    monkeypatch.setenv("MONGO_DB_NAME", "budget_maker_external")
+    monkeypatch.setenv(
+        "TEST_MONGO_URI",
+        "mongodb://test_user:test_password@localhost:27017/budget_maker_test?authSource=admin",
+    )
+
+    configured_settings = Settings(_env_file=None)
+
+    assert configured_settings.mongo_uri.startswith("mongodb+srv://")
+    assert configured_settings.mongo_db_name == "budget_maker_external"
+    assert configured_settings.test_mongo_uri.startswith("mongodb://")
+
+
+@pytest.mark.parametrize(
+    ("unsafe_uri", "expected_error"),
+    [
+        (
+            "mongodb://test_user:test_password@localhost:27017,remote.example:27017/"
+            "budget_maker_test?authSource=admin",
+            "único host local",
+        ),
+        (
+            "mongodb://test_user:test_password@localhost:27017/"
+            "budget_maker_test?authSource=admin&authSource=users",
+            "único authSource=admin",
+        ),
+    ],
+)
+def test_test_mongo_uri_rejects_multiple_hosts_or_auth_sources(
+    unsafe_uri: str,
+    expected_error: str,
+):
+    with pytest.raises(ValueError, match=expected_error):
+        ensure_safe_test_mongo_uri(unsafe_uri)
 
 
 @pytest.mark.parametrize(
@@ -203,6 +242,77 @@ def test_test_mongo_uri_rejects_missing_auth_requirements(unsafe_uri: str, expec
 
 
 @pytest.mark.asyncio
+async def test_init_db_closes_candidate_when_beanie_initialization_fails(monkeypatch: pytest.MonkeyPatch):
+    class FakeDatabase:
+        async def command(self, command_name: str):
+            return {"ok": 1}
+
+    class FakeClient:
+        def __init__(self, uri: str):
+            self.closed = False
+
+        def __getitem__(self, name: str) -> FakeDatabase:
+            return FakeDatabase()
+
+        def close(self) -> None:
+            self.closed = True
+
+    created_clients: list[FakeClient] = []
+
+    def fake_client_factory(uri: str) -> FakeClient:
+        client = FakeClient(uri)
+        created_clients.append(client)
+        return client
+
+    async def failing_init_beanie(*, database, document_models):
+        raise RuntimeError("index creation failed")
+
+    monkeypatch.setattr(database_module, "AsyncIOMotorClient", fake_client_factory)
+    monkeypatch.setattr(database_module, "init_beanie", failing_init_beanie)
+    monkeypatch.setattr(database_module, "mongo_client", None)
+
+    with pytest.raises(RuntimeError, match="index creation failed"):
+        await database_module.init_db()
+
+    assert database_module.mongo_client is None
+    assert created_clients[0].closed is True
+
+
+@pytest.mark.asyncio
+async def test_init_db_preserves_previous_client_when_reinitialization_fails(monkeypatch: pytest.MonkeyPatch):
+    class PreviousClient:
+        def __init__(self):
+            self.closed = False
+
+        def close(self) -> None:
+            self.closed = True
+
+    class FailingDatabase:
+        async def command(self, command_name: str):
+            raise RuntimeError("connection failed")
+
+    class FailingClient:
+        def __init__(self, uri: str):
+            self.closed = False
+
+        def __getitem__(self, name: str) -> FailingDatabase:
+            return FailingDatabase()
+
+        def close(self) -> None:
+            self.closed = True
+
+    previous_client = PreviousClient()
+    monkeypatch.setattr(database_module, "AsyncIOMotorClient", FailingClient)
+    monkeypatch.setattr(database_module, "mongo_client", previous_client)
+
+    with pytest.raises(RuntimeError, match="connection failed"):
+        await database_module.init_db()
+
+    assert database_module.mongo_client is previous_client
+    assert previous_client.closed is False
+
+
+@pytest.mark.asyncio
 async def test_lifespan_bootstraps_mongo_and_closes_it_on_shutdown(monkeypatch: pytest.MonkeyPatch):
     """El lifespan de FastAPI debe inicializar y cerrar Mongo, y sembrar datos por defecto."""
     import main as main_module
@@ -232,3 +342,43 @@ async def test_lifespan_bootstraps_mongo_and_closes_it_on_shutdown(monkeypatch: 
         assert calls == ["init_db", "seed_defaults", "seed_superadmin"]
 
     assert calls == ["init_db", "seed_defaults", "seed_superadmin", "close_db"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failing_seed", ["seed_defaults", "seed_superadmin"])
+async def test_lifespan_closes_mongo_when_seed_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    failing_seed: str,
+):
+    import main as main_module
+
+    calls: list[str] = []
+
+    async def fake_init_db() -> None:
+        calls.append("init_db")
+
+    async def fake_close_db() -> None:
+        calls.append("close_db")
+
+    class FakeConfigUseCases:
+        async def seed_defaults(self) -> None:
+            calls.append("seed_defaults")
+            if failing_seed == "seed_defaults":
+                raise RuntimeError("seed failed")
+
+    class FakeAuthUseCases:
+        async def seed_superadmin(self) -> None:
+            calls.append("seed_superadmin")
+            if failing_seed == "seed_superadmin":
+                raise RuntimeError("seed failed")
+
+    monkeypatch.setattr(main_module, "init_db", fake_init_db)
+    monkeypatch.setattr(main_module, "close_db", fake_close_db)
+    monkeypatch.setattr(main_module, "get_config_use_cases", lambda: FakeConfigUseCases())
+    monkeypatch.setattr(main_module, "get_auth_use_cases", lambda: FakeAuthUseCases())
+
+    with pytest.raises(RuntimeError, match="seed failed"):
+        async with main_module.lifespan(main_module.app):
+            pytest.fail("El lifespan no debe iniciar si falla un seed.")
+
+    assert calls[-1] == "close_db"

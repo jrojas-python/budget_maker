@@ -24,7 +24,7 @@ services:
       - /bin/sh
       - /docker-entrypoint-local/mongodb-entrypoint.sh
     ports:
-      - "27017:27017"
+      - "127.0.0.1:27017:27017"
     environment:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_LOCAL_ROOT_USERNAME}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_LOCAL_ROOT_PASSWORD}
@@ -46,7 +46,7 @@ services:
     image: mongo-express:1
     container_name: budget_maker_mongo_express
     ports:
-      - "8081:8081"
+      - "127.0.0.1:8081:8081"
     environment:
       ME_CONFIG_MONGODB_ADMINUSERNAME: ${MONGO_LOCAL_ROOT_USERNAME}
       ME_CONFIG_MONGODB_ADMINPASSWORD: ${MONGO_LOCAL_ROOT_PASSWORD}

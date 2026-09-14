@@ -16,7 +16,7 @@ def validate_mongo_uri(value: str) -> str:
     parsed = urlsplit(mongo_uri)
     if parsed.scheme not in {"mongodb", "mongodb+srv"}:
         raise ValueError("La URI de MongoDB debe usar mongodb:// o mongodb+srv://.")
-    if not parsed.netloc:
+    if not parsed.netloc or not parsed.hostname:
         raise ValueError("La URI de MongoDB debe incluir al menos un host.")
 
     return mongo_uri
@@ -35,7 +35,7 @@ def mask_mongo_uri(value: str) -> str:
         username, _ = credentials.split(":", maxsplit=1)
         masked_netloc = f"{username}:******@{host}"
 
-    return urlunsplit((parsed.scheme, masked_netloc, parsed.path, parsed.query, parsed.fragment))
+    return urlunsplit((parsed.scheme, masked_netloc, parsed.path, "", parsed.fragment))
 
 
 def ensure_safe_test_mongo_uri(mongo_uri: str, expected_db_name: str = TEST_MONGO_DB_NAME) -> str:
@@ -46,6 +46,10 @@ def ensure_safe_test_mongo_uri(mongo_uri: str, expected_db_name: str = TEST_MONG
     if parsed.scheme != "mongodb":
         raise ValueError("TEST_MONGO_URI debe usar mongodb:// para apuntar al MongoDB local autenticado.")
 
+    hosts = parsed.netloc.rsplit("@", maxsplit=1)[-1]
+    if "," in hosts:
+        raise ValueError("TEST_MONGO_URI debe incluir un único host local.")
+
     host = (parsed.hostname or "").lower()
     if host not in LOCAL_TEST_MONGO_HOSTS:
         raise ValueError("TEST_MONGO_URI debe apuntar únicamente a localhost, 127.0.0.1 o ::1.")
@@ -53,9 +57,9 @@ def ensure_safe_test_mongo_uri(mongo_uri: str, expected_db_name: str = TEST_MONG
     if not parsed.username or not parsed.password:
         raise ValueError("TEST_MONGO_URI debe incluir usuario y contraseña para la autenticación local.")
 
-    auth_sources = {value.lower() for value in parse_qs(parsed.query).get("authSource", [])}
-    if "admin" not in auth_sources:
-        raise ValueError("TEST_MONGO_URI debe incluir authSource=admin para usar el usuario raíz local.")
+    auth_sources = [value.lower() for value in parse_qs(parsed.query).get("authSource", [])]
+    if auth_sources != ["admin"]:
+        raise ValueError("TEST_MONGO_URI debe incluir un único authSource=admin.")
 
     db_name = parsed.path.lstrip("/")
     if db_name != expected_db_name:
@@ -99,10 +103,15 @@ class Settings(BaseSettings):
     default_admin_password: str = Field(default="admin1234", validation_alias="DEFAULT_ADMIN_PASSWORD")
     default_admin_email: str = Field(default="admin@budgetmaker.local", validation_alias="DEFAULT_ADMIN_EMAIL")
 
-    @field_validator("mongo_uri", "test_mongo_uri")
+    @field_validator("mongo_uri")
     @classmethod
-    def _validate_mongo_uris(cls, value: str) -> str:
+    def _validate_mongo_uri(cls, value: str) -> str:
         return validate_mongo_uri(value)
+
+    @field_validator("test_mongo_uri")
+    @classmethod
+    def _validate_test_mongo_uri(cls, value: str) -> str:
+        return ensure_safe_test_mongo_uri(value)
 
     @field_validator("mongo_db_name")
     @classmethod
