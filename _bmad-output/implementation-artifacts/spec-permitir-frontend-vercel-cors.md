@@ -60,6 +60,8 @@ context:
 
 ## Spec Change Log
 
+- 2026-09-13: La revisión formal endureció la normalización para aceptar únicamente orígenes HTTP(S) canónicos sin rutas, credenciales, query, fragmentos ni comodines. También añadió `HEAD`, expuso `Content-Disposition` y aisló las pruebas CORS de la configuración del entorno.
+
 ## Design Notes
 
 Se usará una cadena separada por comas en `CORS_ALLOWED_ORIGINS` para evitar la sintaxis JSON obligatoria de listas en variables de entorno y facilitar la configuración en Render.
@@ -69,6 +71,10 @@ Se usará una cadena separada por comas en `CORS_ALLOWED_ORIGINS` para evitar la
 **Commands:**
 - `python -m pytest tests/test_cors.py -q` -- expected: escenarios CORS y parsing correctos.
 - `python -m pytest -q` -- expected: suite completa sin regresiones.
+
+**Results:**
+- `python -m pytest tests/test_cors.py -q` -- OK, `20 passed`.
+- `python -m pytest -q` -- OK, `129 passed`.
 
 ## Suggested Review Order
 
@@ -82,22 +88,22 @@ Se usará una cadena separada por comas en `CORS_ALLOWED_ORIGINS` para evitar la
 
 **Configuración y normalización**
 
-- Limpia espacios, barras, duplicados y comodines sin aceptar listas vacías.
+- Valida y canoniza orígenes HTTP(S) sin rutas, credenciales, query ni comodines.
   [`config.py:13`](../../settings/config.py#L13)
 
 - Expone el dominio productivo exacto mediante la variable de entorno.
-  [`config.py:113`](../../settings/config.py#L113)
+  [`config.py:146`](../../settings/config.py#L146)
 
 **Verificación y operación**
 
 - Verifica preflight para todos los métodos usados por la API.
-  [`test_cors.py:23`](../../tests/test_cors.py#L23)
+  [`test_cors.py:32`](../../tests/test_cors.py#L32)
 
 - Comprueba rechazo simple y preflight de orígenes no configurados.
-  [`test_cors.py:61`](../../tests/test_cors.py#L61)
+  [`test_cors.py:73`](../../tests/test_cors.py#L73)
 
-- Confirma el dominio predeterminado y múltiples orígenes a través del middleware.
-  [`test_cors.py:99`](../../tests/test_cors.py#L99)
+- Rechaza orígenes malformados y canoniza esquema, host y puerto.
+  [`test_cors.py:162`](../../tests/test_cors.py#L162)
 
 - Documenta la configuración completa de orígenes autorizados en Render.
   [`README.md:126`](../../README.md#L126)

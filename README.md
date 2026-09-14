@@ -129,6 +129,12 @@ En Render, configura `CORS_ALLOWED_ORIGINS` con la lista completa de frontends a
 CORS_ALLOWED_ORIGINS=https://budget-maker-frontend.vercel.app,https://admin.example.com
 ```
 
+Cada origen debe incluir `http://` o `https://`, host y puerto opcional, sin ruta,
+query, fragmento, credenciales ni comodines. CORS permite `GET`, `HEAD`, `POST`,
+`PUT`, `DELETE` y `OPTIONS`, acepta `Authorization` y `Content-Type`, y expone
+`Content-Disposition` para descargas. La autenticación continúa mediante el
+header Bearer; no se habilitan credenciales CORS basadas en cookies.
+
 No uses `*` ni patrones para previews de Vercel. Cada preview debe declararse explícitamente si se decide autorizarlo.
 
 ### Datos Iniciales (Seeds)

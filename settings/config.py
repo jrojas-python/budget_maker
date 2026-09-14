@@ -12,15 +12,48 @@ DEFAULT_CORS_ALLOWED_ORIGIN = "https://budget-maker-frontend.vercel.app"
 
 def normalize_cors_allowed_origins(value: str | list[str]) -> list[str]:
     """Normaliza una lista o cadena de orígenes CORS sin aceptar comodines."""
+    if not isinstance(value, (str, list)):
+        raise ValueError("CORS_ALLOWED_ORIGINS debe ser una cadena o lista de cadenas.")
+
     origins = value.split(",") if isinstance(value, str) else value
     normalized_origins: list[str] = []
 
     for origin in origins:
-        normalized_origin = origin.strip().rstrip("/")
-        if not normalized_origin:
+        if not isinstance(origin, str):
+            raise ValueError("CORS_ALLOWED_ORIGINS debe contener únicamente cadenas.")
+
+        candidate = origin.strip().rstrip("/")
+        if not candidate:
             continue
-        if "*" in normalized_origin:
+        if "*" in candidate:
             raise ValueError("CORS_ALLOWED_ORIGINS no permite patrones comodín.")
+
+        parsed = urlsplit(candidate)
+        if (
+            parsed.scheme.lower() not in {"http", "https"}
+            or not parsed.hostname
+            or parsed.username
+            or parsed.password
+            or parsed.path
+            or parsed.query
+            or parsed.fragment
+        ):
+            raise ValueError("Cada origen CORS debe contener solo esquema, host y puerto opcional.")
+
+        try:
+            port = parsed.port
+        except ValueError as exc:
+            raise ValueError("El puerto del origen CORS no es válido.") from exc
+
+        host = parsed.hostname.lower()
+        if ":" in host:
+            host = f"[{host}]"
+        default_port = (parsed.scheme.lower() == "http" and port == 80) or (
+            parsed.scheme.lower() == "https" and port == 443
+        )
+        port_suffix = f":{port}" if port and not default_port else ""
+        normalized_origin = f"{parsed.scheme.lower()}://{host}{port_suffix}"
+
         if normalized_origin not in normalized_origins:
             normalized_origins.append(normalized_origin)
 

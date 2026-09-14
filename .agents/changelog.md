@@ -12,6 +12,7 @@ Registro de iteraciones del proyecto.
 - Se registró `CORSMiddleware` con el frontend productivo de Vercel permitido por defecto y métodos/cabeceras requeridos por la API.
 - Se documentó la configuración de orígenes adicionales en Render y se añadieron pruebas aisladas para preflight permitido, origen rechazado y parsing.
 - La revisión post-implementación añadió rechazo de configuraciones vacías y cobertura de todos los métodos CORS, preflight rechazado, ausencia de credenciales y múltiples orígenes configurados.
+- La revisión formal restringió los orígenes a URLs HTTP(S) canónicas sin rutas, credenciales, query ni fragmentos; añadió `HEAD`, expuso `Content-Disposition` y aisló las pruebas de cualquier `CORS_ALLOWED_ORIGINS` presente en el entorno.
 
 ### Archivos modificados
 - `settings/config.py`

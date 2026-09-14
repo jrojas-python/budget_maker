@@ -4,7 +4,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 from pydantic import ValidationError
 
-from main import app, create_app
+from main import create_app
 from settings.config import DEFAULT_CORS_ALLOWED_ORIGIN, Settings
 
 
@@ -18,10 +18,20 @@ def _clean_collections() -> None:
     """Evita la limpieza de MongoDB en estas pruebas aisladas."""
 
 
+@pytest.fixture
+def cors_app():
+    """Crea una aplicación con una política CORS independiente del entorno."""
+    app_settings = Settings(
+        _env_file=None,
+        cors_allowed_origins=DEFAULT_CORS_ALLOWED_ORIGIN,
+    )
+    return create_app(app_settings)
+
+
 @pytest.mark.asyncio
-@pytest.mark.parametrize("method", ["GET", "POST", "PUT", "DELETE", "OPTIONS"])
-async def test_cors_allows_required_api_methods(method: str) -> None:
-    transport = ASGITransport(app=app)
+@pytest.mark.parametrize("method", ["GET", "HEAD", "POST", "PUT", "DELETE", "OPTIONS"])
+async def test_cors_allows_required_api_methods(method: str, cors_app) -> None:
+    transport = ASGITransport(app=cors_app)
     headers = {
         "Origin": "https://budget-maker-frontend.vercel.app",
         "Access-Control-Request-Method": method,
@@ -38,11 +48,12 @@ async def test_cors_allows_required_api_methods(method: str) -> None:
     assert method in preflight_response.headers["access-control-allow-methods"]
     assert "authorization" in preflight_response.headers["access-control-allow-headers"].lower()
     assert "content-type" in preflight_response.headers["access-control-allow-headers"].lower()
+    assert preflight_response.headers["vary"] == "Origin"
 
 
 @pytest.mark.asyncio
-async def test_cors_allows_vercel_production_simple_request() -> None:
-    transport = ASGITransport(app=app)
+async def test_cors_allows_vercel_production_simple_request(cors_app) -> None:
+    transport = ASGITransport(app=cors_app)
 
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         simple_response = await client.get(
@@ -55,11 +66,12 @@ async def test_cors_allows_vercel_production_simple_request() -> None:
         "https://budget-maker-frontend.vercel.app"
     )
     assert "access-control-allow-credentials" not in simple_response.headers
+    assert simple_response.headers["access-control-expose-headers"] == "Content-Disposition"
 
 
 @pytest.mark.asyncio
-async def test_cors_does_not_allow_unconfigured_origin() -> None:
-    transport = ASGITransport(app=app)
+async def test_cors_does_not_allow_unconfigured_origin(cors_app) -> None:
+    transport = ASGITransport(app=cors_app)
     origin = "https://sitio-no-autorizado.example"
 
     async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -72,11 +84,13 @@ async def test_cors_does_not_allow_unconfigured_origin() -> None:
             headers={
                 "Origin": origin,
                 "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": "authorization,content-type",
             },
         )
 
     assert simple_response.status_code == 200
     assert "access-control-allow-origin" not in simple_response.headers
+    assert preflight_response.status_code == 400
     assert "access-control-allow-origin" not in preflight_response.headers
 
 
@@ -143,3 +157,30 @@ def test_settings_rejects_empty_cors_allowed_origins() -> None:
 def test_settings_rejects_cors_wildcards() -> None:
     with pytest.raises(ValidationError, match="no permite patrones comodín"):
         Settings(_env_file=None, cors_allowed_origins="https://*.vercel.app")
+
+
+@pytest.mark.parametrize(
+    "invalid_origin",
+    [
+        "null",
+        "budget-maker-frontend.vercel.app",
+        "https://usuario:clave@example.com",
+        "https://example.com/api",
+        "https://example.com?tenant=1",
+        "https://example.com#fragment",
+    ],
+)
+def test_settings_rejects_invalid_cors_origins(invalid_origin: str) -> None:
+    with pytest.raises(ValidationError, match="solo esquema, host y puerto"):
+        Settings(_env_file=None, cors_allowed_origins=invalid_origin)
+
+
+def test_settings_canonicalizes_cors_origin() -> None:
+    configured_settings = Settings(
+        _env_file=None,
+        cors_allowed_origins="HTTPS://BUDGET-MAKER-FRONTEND.VERCEL.APP:443/",
+    )
+
+    assert configured_settings.cors_allowed_origins == [
+        "https://budget-maker-frontend.vercel.app"
+    ]

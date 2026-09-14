@@ -53,8 +53,9 @@ def create_app(app_settings: Settings) -> FastAPI:
         CORSMiddleware,
         allow_origins=app_settings.cors_allowed_origins,
         allow_credentials=False,
-        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        allow_methods=["GET", "HEAD", "POST", "PUT", "DELETE", "OPTIONS"],
         allow_headers=["Authorization", "Content-Type"],
+        expose_headers=["Content-Disposition"],
     )
 
     application.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
