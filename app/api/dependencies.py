@@ -6,12 +6,15 @@ from fastapi.security import OAuth2PasswordBearer
 from app.application.use_cases.auth_use_cases import AuthUseCases
 from app.application.use_cases.budget_use_cases import BudgetUseCases
 from app.application.use_cases.category_use_cases import CategoryUseCases
+from app.application.use_cases.client_use_cases import ClientUseCases
 from app.application.use_cases.config_use_cases import ConfigUseCases
+from app.application.use_cases.dashboard_use_cases import DashboardUseCases
 from app.application.use_cases.product_use_cases import ProductUseCases
 from app.application.use_cases.user_use_cases import UserUseCases
 from app.domain.models.user import User
 from app.infrastructure.repositories.budget_repo import BudgetRepository
 from app.infrastructure.repositories.category_repo import CategoryRepository
+from app.infrastructure.repositories.client_repo import ClientRepository
 from app.infrastructure.repositories.config_repo import ConfigRepository
 from app.infrastructure.repositories.product_repo import ProductRepository
 from app.infrastructure.repositories.user_repo import UserRepository
@@ -29,6 +32,7 @@ _budget_repo = BudgetRepository()
 _config_repo = ConfigRepository()
 _user_repo = UserRepository()
 _category_repo = CategoryRepository()
+_client_repo = ClientRepository()
 _excel_service = ExcelService()
 _pdf_service = PdfService()
 _supabase_storage_service = SupabaseStorageService(settings)
@@ -73,11 +77,20 @@ def get_category_use_cases() -> CategoryUseCases:
     return CategoryUseCases(repo=_category_repo, product_repo=_product_repo)
 
 
+def get_client_use_cases() -> ClientUseCases:
+    return ClientUseCases(repo=_client_repo)
+
+
+def get_dashboard_use_cases() -> DashboardUseCases:
+    return DashboardUseCases(budget_repo=_budget_repo)
+
+
 def get_budget_use_cases() -> BudgetUseCases:
     return BudgetUseCases(
         budget_repo=_budget_repo,
         product_repo=_product_repo,
         config_repo=_config_repo,
+        client_repo=_client_repo,
         pdf_service=_pdf_service,
         image_service=_image_service,
     )

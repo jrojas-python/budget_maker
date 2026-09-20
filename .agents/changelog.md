@@ -4,6 +4,46 @@ Registro de iteraciones del proyecto.
 
 ---
 
+## [2026-09-19] Iteración 17 — Gestión de clientes, presupuestos y métricas
+
+### Realizado
+- Se incorporó la colección `clients` con CRUD autenticado, búsqueda paginada, documento único normalizado y borrado lógico.
+- Los presupuestos conservan `client_info` como snapshot y enlazan opcionalmente un cliente por documento; los presupuestos sin documento no crean registros de cliente.
+- Se completó la gestión administrativa de presupuestos con listado filtrable/paginado, detalle de expirados, edición con recálculo y borrado físico, manteniendo públicas las rutas temporales existentes.
+- Se añadió el endpoint autenticado de métricas con conteos UTC de día, semana y mes, serie diaria, clientes recurrentes, productos más cotizados y métodos de pago.
+- La vista HTML/PDF muestra todos los datos del cliente y se añadió un backfill CLI idempotente con simulación para asociar históricos.
+- Se amplió la cobertura para clientes, presupuestos, dashboard y migración histórica.
+
+### Archivos modificados
+- `app/domain/models/budget.py`
+- `app/domain/models/client.py`
+- `app/domain/schemas/budget.py`
+- `app/domain/schemas/client.py`
+- `app/domain/schemas/dashboard.py`
+- `app/infrastructure/repositories/budget_repo.py`
+- `app/infrastructure/repositories/client_repo.py`
+- `app/application/use_cases/budget_use_cases.py`
+- `app/application/use_cases/client_use_cases.py`
+- `app/application/use_cases/dashboard_use_cases.py`
+- `app/api/dependencies.py`
+- `app/api/v1/budgets.py`
+- `app/api/v1/clients.py`
+- `app/api/v1/dashboard.py`
+- `app/database.py`
+- `main.py`
+- `web/templates/public/budget_view.html`
+- `scripts/backfill_budget_clients.py`
+- `tests/conftest.py`
+- `tests/test_budgets.py`
+- `tests/test_clients.py`
+- `tests/test_dashboard.py`
+- `tests/test_backfill_budget_clients.py`
+- `README.md`
+- `.agents/changelog.md`
+- `_bmad-output/implementation-artifacts/spec-gestion-integral-presupuestos-clientes-dashboard.md`
+
+---
+
 ## [2026-09-14] Iteración 16 — Migración de imágenes a Supabase Storage
 
 ### Realizado

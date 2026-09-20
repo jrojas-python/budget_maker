@@ -12,6 +12,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 
 from app.domain.models.budget import Budget
 from app.domain.models.category import Category
+from app.domain.models.client import Client
 from app.domain.models.global_config import GlobalConfig
 from app.domain.models.product import Product
 from app.domain.models.user import User
@@ -215,7 +216,7 @@ async def _init_db():
         db = client[TEST_DB_NAME]
         await init_beanie(
             database=db,
-            document_models=[GlobalConfig, Product, Budget, User, Category],
+            document_models=[GlobalConfig, Product, Budget, User, Category, Client],
         )
         yield db
     finally:
@@ -275,5 +276,7 @@ async def auth_token(client: AsyncClient) -> str:
 
 
 @pytest.fixture
-def auth_headers(auth_token: str) -> dict[str, str]:
-    return {"Authorization": f"Bearer {auth_token}"}
+def auth_headers(client: AsyncClient, auth_token: str) -> dict[str, str]:
+    headers = {"Authorization": f"Bearer {auth_token}"}
+    client.headers.update(headers)
+    return headers
