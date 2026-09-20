@@ -197,6 +197,7 @@ async def test_init_db_uses_selected_database_and_masks_logs(monkeypatch: pytest
         "GlobalConfig",
         "Product",
         "Budget",
+        "Client",
         "User",
         "Category",
     }

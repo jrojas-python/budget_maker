@@ -16,7 +16,9 @@ from app.application.use_cases.product_use_cases import ProductUseCases
 from app.api.v1.auth import router as auth_router
 from app.api.v1.budgets import router as budgets_router
 from app.api.v1.categories import router as categories_router
+from app.api.v1.clients import router as clients_router
 from app.api.v1.config import router as config_router
+from app.api.v1.dashboard import router as dashboard_router
 from app.api.v1.products import router as products_router
 from app.api.v1.users import router as users_router
 from app.database import close_db, init_db
@@ -85,6 +87,7 @@ def create_app(app_settings: Settings) -> FastAPI:
                 budget_repo=dependencies._budget_repo,
                 product_repo=dependencies._product_repo,
                 config_repo=dependencies._config_repo,
+                client_repo=dependencies._client_repo,
                 pdf_service=dependencies._pdf_service,
                 image_service=image_service,
             )
@@ -125,8 +128,10 @@ def create_app(app_settings: Settings) -> FastAPI:
     application.include_router(users_router)
     application.include_router(config_router)
     application.include_router(categories_router)
+    application.include_router(clients_router)
     application.include_router(products_router)
     application.include_router(budgets_router)
+    application.include_router(dashboard_router)
     application.include_router(web_router)
 
     return application
