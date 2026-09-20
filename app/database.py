@@ -15,6 +15,7 @@ async def init_db() -> None:
 
     from app.domain.models.budget import Budget
     from app.domain.models.category import Category
+    from app.domain.models.client import Client
     from app.domain.models.global_config import GlobalConfig
     from app.domain.models.product import Product
     from app.domain.models.user import User
@@ -32,7 +33,7 @@ async def init_db() -> None:
         await database.command("ping")
         await init_beanie(
             database=database,
-            document_models=[GlobalConfig, Product, Budget, User, Category],
+            document_models=[GlobalConfig, Product, Budget, User, Category, Client],
         )
     except BaseException:
         candidate_client.close()

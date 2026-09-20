@@ -1,4 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException
+from datetime import datetime
+from math import ceil
+
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from fastapi.templating import Jinja2Templates
 from io import BytesIO
@@ -7,33 +10,76 @@ from fastapi import Request
 from pydantic import UUID4
 
 from app.application.use_cases.budget_use_cases import BudgetUseCases
-from app.api.dependencies import get_budget_use_cases
+from app.api.dependencies import get_budget_use_cases, get_current_user
 from app.domain.models.budget import Budget, BudgetIdentifierCollisionError
-from app.domain.schemas.budget import BudgetCreate, BudgetResponse, BudgetWhatsappShareResponse
+from app.domain.models.user import User
+from app.domain.schemas.budget import (
+    BudgetAdminResponse,
+    BudgetCreate,
+    BudgetResponse,
+    BudgetSearchParams,
+    BudgetUpdate,
+    BudgetWhatsappShareResponse,
+)
+from app.domain.schemas.search import PaginatedResponse
 
 router = APIRouter(prefix="/api/v1/budgets", tags=["Presupuestos"])
 templates = Jinja2Templates(directory="web/templates")
 PROJECT_ROOT_BASE_URL = Path(__file__).resolve().parents[3].as_uri() + "/"
 
 
-@router.get("/", response_model=list[BudgetResponse])
-async def list_budgets(uc: BudgetUseCases = Depends(get_budget_use_cases)):
-    budgets = await uc._budget_repo.get_all()
-    return [
-        BudgetResponse(
-            code=b.code, uuid=b.uuid, client_info=b.client_info,
-            items=b.items, subtotal=b.subtotal, tax_percent=b.tax_percent,
-            tax_amount=b.tax_amount, total=b.total, payment_method=b.payment_method,
-            link_ttl_minutes=b.link_ttl_minutes, created_at=b.created_at,
-            expires_at=b.expires_at,
-        )
-        for b in budgets
-    ]
+def _to_public_response(budget: Budget) -> BudgetResponse:
+    return BudgetResponse(**budget.model_dump(exclude={"id", "client_id"}))
+
+
+async def _to_admin_response(budget: Budget, uc: BudgetUseCases) -> BudgetAdminResponse:
+    return BudgetAdminResponse(
+        id=str(budget.id),
+        client_id=str(budget.client_id) if budget.client_id else None,
+        is_expired=await uc.is_expired(budget),
+        **budget.model_dump(exclude={"id", "client_id"}),
+    )
+
+
+@router.get("/", response_model=PaginatedResponse[BudgetAdminResponse])
+async def list_budgets(
+    q: str | None = None,
+    client_id: str | None = None,
+    date_from: datetime | None = Query(default=None, alias="from"),
+    date_to: datetime | None = Query(default=None, alias="to"),
+    is_expired: bool | None = None,
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
+    _: User = Depends(get_current_user),
+    uc: BudgetUseCases = Depends(get_budget_use_cases),
+):
+    params = BudgetSearchParams(
+        q=q,
+        client_id=client_id,
+        date_from=date_from,
+        date_to=date_to,
+        is_expired=is_expired,
+        page=page,
+        limit=limit,
+    )
+    try:
+        budgets, total = await uc.search(params)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    items = [await _to_admin_response(budget, uc) for budget in budgets]
+    return PaginatedResponse[BudgetAdminResponse](
+        items=items,
+        total=total,
+        page=page,
+        limit=limit,
+        pages=ceil(total / limit) if limit else 0,
+    )
 
 
 @router.post("/", response_model=BudgetResponse, status_code=201)
 async def create_budget(
     body: BudgetCreate,
+    _: User = Depends(get_current_user),
     uc: BudgetUseCases = Depends(get_budget_use_cases),
 ):
     try:
@@ -42,25 +88,51 @@ async def create_budget(
         raise HTTPException(status_code=409, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
-    return BudgetResponse(
-        code=budget.code, uuid=budget.uuid, client_info=budget.client_info,
-        items=budget.items, subtotal=budget.subtotal, tax_percent=budget.tax_percent,
-        tax_amount=budget.tax_amount, total=budget.total, payment_method=budget.payment_method,
-        link_ttl_minutes=budget.link_ttl_minutes, created_at=budget.created_at,
-        expires_at=budget.expires_at,
-    )
+    return _to_public_response(budget)
+
+
+@router.get("/{uuid}/admin", response_model=BudgetAdminResponse)
+async def get_budget_admin(
+    uuid: UUID4,
+    _: User = Depends(get_current_user),
+    uc: BudgetUseCases = Depends(get_budget_use_cases),
+):
+    budget = await uc.get_by_uuid(str(uuid))
+    if not budget:
+        raise HTTPException(status_code=404, detail="Presupuesto no encontrado")
+    return await _to_admin_response(budget, uc)
+
+
+@router.put("/{uuid}", response_model=BudgetAdminResponse)
+async def update_budget(
+    uuid: UUID4,
+    body: BudgetUpdate,
+    _: User = Depends(get_current_user),
+    uc: BudgetUseCases = Depends(get_budget_use_cases),
+):
+    try:
+        budget = await uc.update_budget(str(uuid), body)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if not budget:
+        raise HTTPException(status_code=404, detail="Presupuesto no encontrado")
+    return await _to_admin_response(budget, uc)
+
+
+@router.delete("/{uuid}", status_code=204)
+async def delete_budget(
+    uuid: UUID4,
+    _: User = Depends(get_current_user),
+    uc: BudgetUseCases = Depends(get_budget_use_cases),
+):
+    if not await uc.delete_budget(str(uuid)):
+        raise HTTPException(status_code=404, detail="Presupuesto no encontrado")
 
 
 @router.get("/{uuid}", response_model=BudgetResponse)
 async def get_budget(uuid: UUID4, uc: BudgetUseCases = Depends(get_budget_use_cases)):
     budget = await _get_active_budget_or_raise(uuid, uc)
-    return BudgetResponse(
-        code=budget.code, uuid=budget.uuid, client_info=budget.client_info,
-        items=budget.items, subtotal=budget.subtotal, tax_percent=budget.tax_percent,
-        tax_amount=budget.tax_amount, total=budget.total, payment_method=budget.payment_method,
-        link_ttl_minutes=budget.link_ttl_minutes, created_at=budget.created_at,
-        expires_at=budget.expires_at,
-    )
+    return _to_public_response(budget)
 
 
 @router.get("/{uuid}/pdf")

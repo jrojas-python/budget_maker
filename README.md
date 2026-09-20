@@ -246,11 +246,16 @@ Si envías `category_ids` inválidos al crear o actualizar productos, o un `cate
 ### Presupuestos
 | Método | Ruta | Auth | Descripción |
 |--------|------|------|-------------|
-| GET | `/api/v1/budgets/` | — | Listar presupuestos |
-| POST | `/api/v1/budgets/` | Bearer | Crear presupuesto con `client_info.email` y `payment_method` opcional validado contra métodos activos |
+| GET | `/api/v1/budgets/` | Bearer | Listar y filtrar presupuestos con paginación |
+| POST | `/api/v1/budgets/` | Bearer | Crear presupuesto y vincular cliente por documento cuando exista |
+| GET | `/api/v1/budgets/{uuid}/admin` | Bearer | Obtener detalle administrativo, incluso si expiró |
+| PUT | `/api/v1/budgets/{uuid}` | Bearer | Actualizar cliente, ítems o método de pago y recalcular montos |
+| DELETE | `/api/v1/budgets/{uuid}` | Bearer | Eliminar físicamente el presupuesto |
 | GET | `/api/v1/budgets/{uuid}` | — | Obtener presupuesto por UUID4 (422 si UUID inválido, 410 si expiró) |
 | GET | `/api/v1/budgets/{uuid}/pdf` | No | Descargar PDF (422 UUID inválido, 404 si no existe, 410 si expira) |
 | GET | `/api/v1/budgets/{uuid}/whatsapp-share` | — | Obtener enlace canónico `wa.me` (422 UUID inválido, 404/410 según vigencia) |
+
+El listado administrativo acepta `q`, `client_id`, `from`, `to`, `is_expired`, `page` y `limit`. La respuesta usa el contrato paginado `{items, total, page, limit, pages}` y ordena los presupuestos más recientes primero.
 
 Ejemplo de payload `POST /api/v1/budgets/`:
 
@@ -258,10 +263,12 @@ Ejemplo de payload `POST /api/v1/budgets/`:
 {
   "client_info": {
     "nombres": "Cliente Demo",
-    "telefono": "3001234567",
+    "apellidos": "Pérez",
     "direccion": "Calle 1 #2-3",
     "documento": "12345678",
-    "email": "cliente@test.com"
+    "email": "cliente@test.com",
+    "compania": "Empresa Demo",
+    "observaciones": "Entregar en horario comercial"
   },
   "payment_method": "Transferencia",
   "items": [
@@ -273,7 +280,7 @@ Ejemplo de payload `POST /api/v1/budgets/`:
 }
 ```
 
-`payment_method` se valida solo al crear el presupuesto. Si no está en la lista activa de configuración global, la API responde `422`. Si se omite, el presupuesto se crea con `payment_method: null` para mantener compatibilidad.
+`nombres` es el único dato obligatorio de `client_info`. Cuando `documento` está informado, se normaliza y se crea o actualiza un cliente reutilizable; el presupuesto conserva además una copia histórica en `client_info`. Sin documento no se crea cliente. `payment_method` se valida al crear y actualizar; si se omite al crear, se guarda como `null`.
 
 Ejemplo de respuesta `GET /api/v1/budgets/{uuid}/whatsapp-share`:
 
@@ -282,6 +289,22 @@ Ejemplo de respuesta `GET /api/v1/budgets/{uuid}/whatsapp-share`:
   "whatsapp_url": "https://wa.me/?text=Empresa%3A%20Mi%20Empresa%0AC%C3%B3digo%3A%20BM-20260828-AB12%0ATotal%3A%20%24123.45%0ALink%3A%20http%3A%2F%2Flocalhost%3A8000%2Fpresupuesto%2F550e8400-e29b-41d4-a716-446655440000"
 }
 ```
+
+### Clientes
+| Método | Ruta | Auth | Descripción |
+|--------|------|------|-------------|
+| GET | `/api/v1/clients/` | Bearer | Buscar clientes por texto, estado y paginación |
+| POST | `/api/v1/clients/` | Bearer | Crear cliente; documento único cuando está informado |
+| GET | `/api/v1/clients/{id}` | Bearer | Obtener cliente |
+| PUT | `/api/v1/clients/{id}` | Bearer | Actualizar cliente sin modificar snapshots históricos |
+| DELETE | `/api/v1/clients/{id}` | Bearer | Desactivar cliente mediante borrado lógico |
+
+### Dashboard
+| Método | Ruta | Auth | Descripción |
+|--------|------|------|-------------|
+| GET | `/api/v1/dashboard/metrics` | Bearer | Métricas UTC de presupuestos para el dashboard |
+
+Acepta `from`, `to` y `top_limit`. Sin rango usa los últimos 30 días; el máximo permitido es 366 días. Devuelve conteos del día, semana ISO y mes actuales, serie diaria con días vacíos en cero, clientes únicos/recurrentes, productos más cotizados y distribución por método de pago. Los importes representan cotizaciones, no ventas confirmadas.
 
 ### Configuración Global
 | Método | Ruta | Auth | Descripción |
@@ -346,7 +369,7 @@ Los tests usan una BD separada (`budget_maker_test`) que se elimina al finalizar
 - Los identificadores públicos `code` y `uuid` tienen índice único en MongoDB para evitar duplicados persistentes.
 - `code` mantiene el formato comercial `BM-YYYYMMDD-XXXX`; si hay colisión se reintenta de forma acotada.
 - Todas las rutas públicas por UUID validan el formato en la frontera HTTP y rechazan UUID inválidos con 422.
-- Los montos de cotización (`unit_cost`, `line_total`, `subtotal`, `tax_amount`, `total`) se congelan al crear el presupuesto y no se recalculan después.
+- Los montos de cotización se congelan para lectura histórica. Una edición administrativa explícita de ítems los recalcula con el catálogo y el impuesto vigentes, sin renovar identificadores ni expiración.
 - La generación de PDF aplica branding en servidor (`site_logo`, `site_title`, `site_subtitle`) y no depende de JavaScript cliente.
 - El render de PDF usa `base_url` absoluto del proyecto detectado por módulo (no depende del directorio actual de arranque).
 - El enlace de WhatsApp se genera en backend con formato canónico `https://wa.me/?text={url_encoded_text}` e incluye empresa, código, total y link temporal.
@@ -400,6 +423,17 @@ Comportamiento:
   - 1 a 3 categorías aleatorias (`category_ids`),
   - 1 a 3 colores con nombre + hex,
   - 3 a 6 tags aleatorios.
+
+## Backfill de clientes históricos
+
+Para asociar presupuestos existentes con la colección `clients` usando el documento normalizado:
+
+```bash
+python scripts\backfill_budget_clients.py --dry-run
+python scripts\backfill_budget_clients.py --batch-size 100
+```
+
+El modo `--dry-run` informa cuántos clientes y asociaciones produciría sin persistir cambios. El proceso es idempotente, omite presupuestos sin documento y nunca modifica `client_info`, montos, UUID ni expiración.
 
 ## Colores de Producto
 

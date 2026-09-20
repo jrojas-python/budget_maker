@@ -30,6 +30,21 @@ def _budget_payload() -> dict:
     }
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("quantity", [0, -1])
+async def test_budget_rejects_non_positive_quantity(
+    client: AsyncClient,
+    auth_headers: dict,
+    quantity: int,
+):
+    payload = _budget_payload()
+    payload["items"][0]["quantity"] = quantity
+
+    response = await client.post("/api/v1/budgets/", json=payload)
+
+    assert response.status_code == 422
+
+
 async def _expire_budget(uuid: str) -> None:
     from app.api.dependencies import get_budget_use_cases
 
@@ -189,7 +204,7 @@ async def test_create_budget_rejects_inactive_payment_method(client: AsyncClient
 
 
 @pytest.mark.asyncio
-async def test_create_budget_rejects_unknown_sku(client: AsyncClient):
+async def test_create_budget_rejects_unknown_sku(client: AsyncClient, auth_headers: dict):
     """SKU inexistente retorna HTTP 422 al crear presupuesto."""
     payload = _budget_payload()
     payload["items"] = [{"sku": "SKU-NO-EXISTE", "quantity": 1}]
@@ -290,6 +305,11 @@ async def test_get_expired_budget_returns_410(client: AsyncClient, auth_headers:
 
     res = await client.get(f"/api/v1/budgets/{budget_data['uuid']}")
     assert res.status_code == 410
+
+    expired = await client.get("/api/v1/budgets/?is_expired=true")
+    active = await client.get("/api/v1/budgets/?is_expired=false")
+    assert budget_data["uuid"] in {item["uuid"] for item in expired.json()["items"]}
+    assert budget_data["uuid"] not in {item["uuid"] for item in active.json()["items"]}
     assert "expirado" in res.json()["detail"].lower()
 
 
@@ -310,10 +330,14 @@ async def test_list_budgets_includes_expired(client: AsyncClient, auth_headers: 
 
     res = await client.get("/api/v1/budgets/")
     assert res.status_code == 200
-    uuids = [b["uuid"] for b in res.json()]
+    response_data = res.json()
+    uuids = [budget["uuid"] for budget in response_data["items"]]
     assert budget_data["uuid"] in uuids
-    expired_entry = next(b for b in res.json() if b["uuid"] == budget_data["uuid"])
+    expired_entry = next(
+        budget for budget in response_data["items"] if budget["uuid"] == budget_data["uuid"]
+    )
     assert expired_entry["expires_at"] is not None
+    assert expired_entry["is_expired"] is True
 
 
 @pytest.mark.asyncio
@@ -335,6 +359,11 @@ async def test_legacy_budget_without_expires_at_uses_fallback(client: AsyncClien
 
     res = await client.get(f"/api/v1/budgets/{budget_data['uuid']}")
     assert res.status_code == 410
+
+    expired = await client.get("/api/v1/budgets/?is_expired=true")
+    active = await client.get("/api/v1/budgets/?is_expired=false")
+    assert budget_data["uuid"] in {item["uuid"] for item in expired.json()["items"]}
+    assert budget_data["uuid"] not in {item["uuid"] for item in active.json()["items"]}
 
 
 @pytest.mark.asyncio
@@ -611,6 +640,52 @@ async def test_pdf_hides_photo_column_when_config_is_disabled(client: AsyncClien
 
 
 @pytest.mark.asyncio
+async def test_html_and_pdf_render_all_client_fields(
+    client: AsyncClient,
+    auth_headers: dict,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    from app.api.dependencies import _pdf_service
+
+    await _create_product(client, auth_headers)
+    payload = _budget_payload()
+    payload["client_info"].update(
+        {
+            "email": "ana@example.com",
+            "compania": "Empresa Cliente",
+            "observaciones": "Entregar en recepción",
+        }
+    )
+    created = await client.post("/api/v1/budgets/", json=payload)
+    assert created.status_code == 201
+    budget_uuid = created.json()["uuid"]
+
+    web_response = await client.get(f"/presupuesto/{budget_uuid}")
+    assert web_response.status_code == 200
+    expected_values = (
+        "Ana",
+        "Rojas",
+        "ana@example.com",
+        "12345678",
+        "Empresa Cliente",
+        "Calle 1",
+        "Entregar en recepción",
+    )
+    assert all(value in web_response.text for value in expected_values)
+
+    captured: dict[str, str] = {}
+
+    def _fake_pdf(html_content: str, base_url: str | None = None) -> bytes:
+        captured["html"] = html_content
+        return b"%PDF-1.4 prueba"
+
+    monkeypatch.setattr(_pdf_service, "generate_from_html", _fake_pdf)
+    pdf_response = await client.get(f"/api/v1/budgets/{budget_uuid}/pdf")
+    assert pdf_response.status_code == 200
+    assert all(value in captured["html"] for value in expected_values)
+
+
+@pytest.mark.asyncio
 async def test_pdf_shows_photo_and_server_side_branding_when_enabled(
     client: AsyncClient,
     auth_headers: dict,
@@ -800,3 +875,184 @@ async def test_pdf_ignores_external_and_loopback_asset_urls(
         await product.save()
         assert await uc._resolve_product_image(product.sku, for_pdf=True) is None
         assert uc._resolve_branding_asset(external_url, for_pdf=True) is None
+
+
+@pytest.mark.asyncio
+async def test_budget_administration_requires_authentication(client: AsyncClient):
+    assert (await client.get("/api/v1/budgets/")).status_code == 401
+    assert (await client.post("/api/v1/budgets/", json=_budget_payload())).status_code == 401
+    test_uuid = "550e8400-e29b-41d4-a716-446655440000"
+    assert (await client.get(f"/api/v1/budgets/{test_uuid}/admin")).status_code == 401
+    assert (await client.put(f"/api/v1/budgets/{test_uuid}", json={})).status_code == 401
+    assert (await client.delete(f"/api/v1/budgets/{test_uuid}")).status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_budget_with_only_name_does_not_create_client(
+    client: AsyncClient,
+    auth_headers: dict,
+):
+    from app.domain.models.client import Client
+
+    await _create_product(client, auth_headers)
+    payload = _budget_payload()
+    payload["client_info"] = {"nombres": "Cliente sin documento"}
+
+    created = await client.post("/api/v1/budgets/", json=payload)
+    assert created.status_code == 201
+    budget = created.json()
+    assert budget["client_info"]["apellidos"] == ""
+    assert budget["client_info"]["compania"] == ""
+    assert await Client.find_all().count() == 0
+
+    admin = await client.get(f"/api/v1/budgets/{budget['uuid']}/admin")
+    assert admin.status_code == 200
+    assert admin.json()["client_id"] is None
+    html = await client.get(f"/presupuesto/{budget['uuid']}")
+    assert html.status_code == 200
+    assert "Cliente sin documento" in html.text
+
+
+@pytest.mark.asyncio
+async def test_budget_upserts_client_by_document_and_keeps_old_snapshot(
+    client: AsyncClient,
+    auth_headers: dict,
+):
+    await _create_product(client, auth_headers)
+    first_payload = _budget_payload()
+    first_payload["client_info"]["compania"] = "Empresa Original"
+    first = await client.post("/api/v1/budgets/", json=first_payload)
+    assert first.status_code == 201
+    first_budget = first.json()
+    first_admin = await client.get(f"/api/v1/budgets/{first_budget['uuid']}/admin")
+    client_id = first_admin.json()["client_id"]
+    assert client_id is not None
+
+    client_update = await client.put(
+        f"/api/v1/clients/{client_id}",
+        json={"compania": "Empresa Editada"},
+    )
+    assert client_update.status_code == 200
+    old_snapshot = await client.get(f"/api/v1/budgets/{first_budget['uuid']}")
+    assert old_snapshot.json()["client_info"]["compania"] == "Empresa Original"
+
+    second_payload = _budget_payload()
+    second_payload["client_info"].update(
+        {"documento": " 1234 5678 ", "compania": "Empresa Más Reciente"}
+    )
+    second = await client.post("/api/v1/budgets/", json=second_payload)
+    assert second.status_code == 201
+    second_admin = await client.get(f"/api/v1/budgets/{second.json()['uuid']}/admin")
+    assert second_admin.json()["client_id"] == client_id
+    assert second.json()["client_info"]["compania"] == "Empresa Más Reciente"
+
+    old_snapshot_again = await client.get(f"/api/v1/budgets/{first_budget['uuid']}")
+    assert old_snapshot_again.json()["client_info"]["compania"] == "Empresa Original"
+
+
+@pytest.mark.asyncio
+async def test_sparse_budget_does_not_clear_existing_client_fields(
+    client: AsyncClient,
+    auth_headers: dict,
+):
+    await _create_product(client, auth_headers)
+    first_payload = _budget_payload()
+    first_payload["client_info"].update(
+        {"email": "cliente@example.com", "compania": "Empresa Vigente"}
+    )
+    first = await client.post("/api/v1/budgets/", json=first_payload)
+    assert first.status_code == 201
+
+    sparse_payload = {
+        "client_info": {"nombres": "Cliente", "documento": "12345678"},
+        "items": [{"sku": "BGT-001", "quantity": 1}],
+    }
+    second = await client.post("/api/v1/budgets/", json=sparse_payload)
+
+    assert second.status_code == 201
+    assert second.json()["client_info"]["email"] == "cliente@example.com"
+    assert second.json()["client_info"]["compania"] == "Empresa Vigente"
+
+
+@pytest.mark.asyncio
+async def test_update_budget_recalculates_and_preserves_identity_and_expiration(
+    client: AsyncClient,
+    auth_headers: dict,
+):
+    product = await _create_product(client, auth_headers)
+    await client.put(
+        "/api/v1/config/global",
+        json={"tax_rate": 10, "link_ttl_minutes": 60, "show_product_photos_in_pdf": True},
+        headers=auth_headers,
+    )
+    await client.post(
+        "/api/v1/config/payment-methods",
+        json={"name": "Transferencia"},
+        headers=auth_headers,
+    )
+    created = await client.post("/api/v1/budgets/", json=_budget_payload())
+    assert created.status_code == 201
+    original = created.json()
+
+    await client.put(
+        f"/api/v1/products/{product['id']}",
+        json={"cost": 200.0},
+        headers=auth_headers,
+    )
+    await client.put(
+        "/api/v1/config/global",
+        json={"tax_rate": 20, "link_ttl_minutes": 5, "show_product_photos_in_pdf": True},
+        headers=auth_headers,
+    )
+    updated = await client.put(
+        f"/api/v1/budgets/{original['uuid']}",
+        json={
+            "items": [{"sku": "BGT-001", "quantity": 2}],
+            "payment_method": "Transferencia",
+            "client_info": {"compania": "Compañía Actualizada"},
+        },
+    )
+    assert updated.status_code == 200
+    result = updated.json()
+    assert result["code"] == original["code"]
+    assert result["uuid"] == original["uuid"]
+    assert result["created_at"] == original["created_at"]
+    assert result["expires_at"] == original["expires_at"]
+    assert result["link_ttl_minutes"] == original["link_ttl_minutes"]
+    assert result["subtotal"] == 400
+    assert result["tax_percent"] == 20
+    assert result["tax_amount"] == 80
+    assert result["total"] == 480
+    assert result["payment_method"] == "Transferencia"
+    assert result["client_info"]["compania"] == "Compañía Actualizada"
+
+
+@pytest.mark.asyncio
+async def test_budget_admin_filters_paginates_and_deletes_physically(
+    client: AsyncClient,
+    auth_headers: dict,
+):
+    await _create_product(client, auth_headers)
+    first = await client.post("/api/v1/budgets/", json=_budget_payload())
+    second_payload = _budget_payload()
+    second_payload["client_info"].update(
+        {"nombres": "Beatriz", "documento": "999", "compania": "Beta"}
+    )
+    second = await client.post("/api/v1/budgets/", json=second_payload)
+    assert first.status_code == second.status_code == 201
+
+    filtered = await client.get("/api/v1/budgets/?q=Beta&page=1&limit=1")
+    assert filtered.status_code == 200
+    assert filtered.json()["total"] == 1
+    assert filtered.json()["pages"] == 1
+    assert filtered.json()["items"][0]["uuid"] == second.json()["uuid"]
+
+    client_id = filtered.json()["items"][0]["client_id"]
+    by_client = await client.get(f"/api/v1/budgets/?client_id={client_id}")
+    assert by_client.status_code == 200
+    assert by_client.json()["total"] == 1
+
+    deleted = await client.delete(f"/api/v1/budgets/{second.json()['uuid']}")
+    assert deleted.status_code == 204
+    assert (await client.get(f"/api/v1/budgets/{second.json()['uuid']}/admin")).status_code == 404
+    assert (await client.get(f"/api/v1/clients/{client_id}")).status_code == 200

@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from beanie import Document
+from beanie import Document, PydanticObjectId
 from pydantic import BaseModel, Field
 from pymongo import IndexModel
 
@@ -11,11 +11,13 @@ class ClientInfo(BaseModel):
     """Datos del cliente en el presupuesto."""
 
     nombres: str
-    apellidos: str
+    apellidos: str = ""
     documento: str = ""
     direccion: str = ""
     email: str = ""
     vendedor: str = ""
+    compania: str = ""
+    observaciones: str = ""
 
 
 class BudgetItem(BaseModel):
@@ -43,6 +45,7 @@ class Budget(Document):
 
     code: str = Field(..., description="Formato BM-YYYYMMDD-XXXX")
     uuid: str = Field(..., description="UUID4 público para URLs")
+    client_id: PydanticObjectId | None = None
     client_info: ClientInfo
     items: list[BudgetItem]
     subtotal: float = 0.0
