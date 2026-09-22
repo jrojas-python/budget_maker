@@ -4,6 +4,22 @@ Registro de iteraciones del proyecto.
 
 ---
 
+## [2026-09-22] Iteración 19 — Creación pública de presupuestos
+
+### Realizado
+- Se removió la autenticación JWT del endpoint `POST /api/v1/budgets/`, dejando la creación de presupuestos como operación pública.
+- Se mantuvo la protección JWT en las operaciones administrativas de presupuestos (`GET /{uuid}/admin`, `PUT /{uuid}`, `DELETE /{uuid}`).
+- Se actualizó la prueba de regresión para validar que el listado y la creación de presupuestos funcionen sin token, preservando la protección del resto de operaciones administrativas.
+- Se actualizó README para reflejar explícitamente que `POST /api/v1/budgets/` es público.
+
+### Archivos modificados
+- `app/api/v1/budgets.py`
+- `tests/test_budgets.py`
+- `README.md`
+- `.agents/changelog.md`
+
+---
+
 ## [2026-09-22] Iteración 18 — Listado público de presupuestos
 
 ### Realizado

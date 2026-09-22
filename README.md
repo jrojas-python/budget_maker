@@ -247,7 +247,7 @@ Si envías `category_ids` inválidos al crear o actualizar productos, o un `cate
 | Método | Ruta | Auth | Descripción |
 |--------|------|------|-------------|
 | GET | `/api/v1/budgets/` | No (público) | Listar y filtrar presupuestos con paginación |
-| POST | `/api/v1/budgets/` | Bearer | Crear presupuesto y vincular cliente por documento cuando exista |
+| POST | `/api/v1/budgets/` | No (público) | Crear presupuesto y vincular cliente por documento cuando exista |
 | GET | `/api/v1/budgets/{uuid}/admin` | Bearer | Obtener detalle administrativo, incluso si expiró |
 | PUT | `/api/v1/budgets/{uuid}` | Bearer | Actualizar cliente, ítems o método de pago y recalcular montos |
 | DELETE | `/api/v1/budgets/{uuid}` | Bearer | Eliminar físicamente el presupuesto |
@@ -255,7 +255,7 @@ Si envías `category_ids` inválidos al crear o actualizar productos, o un `cate
 | GET | `/api/v1/budgets/{uuid}/pdf` | No | Descargar PDF (422 UUID inválido, 404 si no existe, 410 si expira) |
 | GET | `/api/v1/budgets/{uuid}/whatsapp-share` | — | Obtener enlace canónico `wa.me` (422 UUID inválido, 404/410 según vigencia) |
 
-El listado público no requiere JWT y acepta `q`, `client_id`, `from`, `to`, `is_expired`, `page` y `limit`. La respuesta usa el contrato paginado `{items, total, page, limit, pages}` y ordena los presupuestos más recientes primero. La creación, edición, eliminación y consulta del detalle administrativo continúan requiriendo autenticación.
+El listado y la creación pública no requieren JWT. El listado acepta `q`, `client_id`, `from`, `to`, `is_expired`, `page` y `limit`. La respuesta usa el contrato paginado `{items, total, page, limit, pages}` y ordena los presupuestos más recientes primero. La edición, eliminación y consulta del detalle administrativo continúan requiriendo autenticación.
 
 Ejemplo de payload `POST /api/v1/budgets/`:
 

@@ -880,6 +880,7 @@ async def test_pdf_ignores_external_and_loopback_asset_urls(
 @pytest.mark.asyncio
 async def test_budget_public_listing_and_private_operations_require_authentication(
     client: AsyncClient,
+    auth_headers: dict,
 ):
     listed = await client.get("/api/v1/budgets/")
     assert listed.status_code == 200
@@ -890,7 +891,10 @@ async def test_budget_public_listing_and_private_operations_require_authenticati
         "limit": 20,
         "pages": 0,
     }
-    assert (await client.post("/api/v1/budgets/", json=_budget_payload())).status_code == 401
+    await _create_product(client, auth_headers)
+    client.headers.pop("Authorization")
+    created = await client.post("/api/v1/budgets/", json=_budget_payload())
+    assert created.status_code == 201
     test_uuid = "550e8400-e29b-41d4-a716-446655440000"
     assert (await client.get(f"/api/v1/budgets/{test_uuid}/admin")).status_code == 401
     assert (await client.put(f"/api/v1/budgets/{test_uuid}", json={})).status_code == 401

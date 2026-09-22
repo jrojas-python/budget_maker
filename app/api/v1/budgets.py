@@ -78,7 +78,6 @@ async def list_budgets(
 @router.post("/", response_model=BudgetResponse, status_code=201)
 async def create_budget(
     body: BudgetCreate,
-    _: User = Depends(get_current_user),
     uc: BudgetUseCases = Depends(get_budget_use_cases),
 ):
     try:
