@@ -4,6 +4,23 @@ Registro de iteraciones del proyecto.
 
 ---
 
+## [2026-09-22] Iteración 18 — Listado público de presupuestos
+
+### Realizado
+- Se habilitó el acceso anónimo a `GET /api/v1/budgets/` sin modificar sus filtros, paginación ni contrato de respuesta.
+- Se mantuvo la autenticación JWT en la creación, edición, eliminación y consulta del detalle administrativo de presupuestos.
+- Se añadió cobertura de regresión para el listado y los filtros sin token, además de las operaciones que continúan protegidas.
+- Se actualizó la documentación de endpoints para identificar el listado como público.
+
+### Archivos modificados
+- `app/api/v1/budgets.py`
+- `tests/test_budgets.py`
+- `README.md`
+- `.agents/changelog.md`
+- `_bmad-output/implementation-artifacts/spec-listado-publico-de-presupuestos.md`
+
+---
+
 ## [2026-09-19] Iteración 17 — Gestión de clientes, presupuestos y métricas
 
 ### Realizado

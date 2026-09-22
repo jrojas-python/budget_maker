@@ -50,7 +50,6 @@ async def list_budgets(
     is_expired: bool | None = None,
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=100),
-    _: User = Depends(get_current_user),
     uc: BudgetUseCases = Depends(get_budget_use_cases),
 ):
     params = BudgetSearchParams(

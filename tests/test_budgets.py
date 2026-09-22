@@ -878,8 +878,18 @@ async def test_pdf_ignores_external_and_loopback_asset_urls(
 
 
 @pytest.mark.asyncio
-async def test_budget_administration_requires_authentication(client: AsyncClient):
-    assert (await client.get("/api/v1/budgets/")).status_code == 401
+async def test_budget_public_listing_and_private_operations_require_authentication(
+    client: AsyncClient,
+):
+    listed = await client.get("/api/v1/budgets/")
+    assert listed.status_code == 200
+    assert listed.json() == {
+        "items": [],
+        "total": 0,
+        "page": 1,
+        "limit": 20,
+        "pages": 0,
+    }
     assert (await client.post("/api/v1/budgets/", json=_budget_payload())).status_code == 401
     test_uuid = "550e8400-e29b-41d4-a716-446655440000"
     assert (await client.get(f"/api/v1/budgets/{test_uuid}/admin")).status_code == 401
@@ -1041,6 +1051,7 @@ async def test_budget_admin_filters_paginates_and_deletes_physically(
     second = await client.post("/api/v1/budgets/", json=second_payload)
     assert first.status_code == second.status_code == 201
 
+    client.headers.pop("Authorization")
     filtered = await client.get("/api/v1/budgets/?q=Beta&page=1&limit=1")
     assert filtered.status_code == 200
     assert filtered.json()["total"] == 1
@@ -1052,7 +1063,17 @@ async def test_budget_admin_filters_paginates_and_deletes_physically(
     assert by_client.status_code == 200
     assert by_client.json()["total"] == 1
 
-    deleted = await client.delete(f"/api/v1/budgets/{second.json()['uuid']}")
+    deleted = await client.delete(
+        f"/api/v1/budgets/{second.json()['uuid']}",
+        headers=auth_headers,
+    )
     assert deleted.status_code == 204
-    assert (await client.get(f"/api/v1/budgets/{second.json()['uuid']}/admin")).status_code == 404
-    assert (await client.get(f"/api/v1/clients/{client_id}")).status_code == 200
+    assert (
+        await client.get(
+            f"/api/v1/budgets/{second.json()['uuid']}/admin",
+            headers=auth_headers,
+        )
+    ).status_code == 404
+    assert (
+        await client.get(f"/api/v1/clients/{client_id}", headers=auth_headers)
+    ).status_code == 200
