@@ -70,6 +70,13 @@ Servicio de generación de presupuestos/cotizaciones de productos. API RESTful c
 - Columna opcional: colores (formato `Nombre:#HEX,Nombre:#HEX`)
 - Regla de colisión: si SKU existe → actualizar; si no → crear
 
+### Exportación Excel
+- Endpoint: `GET /api/v1/products/export` (requiere autenticación Bearer).
+- Formato: `.xlsx` generado con `openpyxl`, con estilos de cabecera y ancho autoajustable.
+- Columnas: `id`, `nombre`, `sku`, `costo`, `unidad`, `moneda`, `descripcion`, `marca`, `colores`, `categoria` (slugs), `categorias_nombres`, `tags`, `imagenes`.
+- Compatibilidad: 100% compatible con el proceso de re-importación (`parse_products`).
+- Filtros: Permite exportar el catálogo completo o aplicar filtros activos de búsqueda (`q`, `category_slug`, etc.).
+
 ### Colores de Producto
 - Cada producto puede tener de 0 a 6 colores
 - Cada color tiene nombre descriptivo y código hexadecimal (`#RRGGBB`)

@@ -357,6 +357,26 @@ class ProductUseCases:
                 created += 1
         return {"created": created, "updated": updated, "total": created + updated}
 
+    async def export_products_to_excel(self, params: ProductSearchParams) -> bytes:
+        """Exporta productos coincidentes con los filtros a formato Excel (.xlsx)."""
+        resolved_category_id: str | None = None
+        if params.category_slug:
+            category = await self._category_repo.get_by_slug(params.category_slug)
+            if category:
+                resolved_category_id = str(category.id)
+            else:
+                all_cats = await self._category_repo.get_all()
+                cats_map = {str(c.id): c for c in all_cats}
+                return self._excel.generate_products_excel([], cats_map)
+
+        if params.category_id:
+            _parse_object_id(params.category_id, "category_id")
+
+        products = await self._repo.search_all(params, resolved_category_id)
+        all_cats = await self._category_repo.get_all()
+        cats_map = {str(c.id): c for c in all_cats}
+        return self._excel.generate_products_excel(products, cats_map)
+
     async def _safe_delete_uploaded_image(self, image_url: str, product_id: str) -> None:
         try:
             await self._image.delete_product_image(image_url, product_id)

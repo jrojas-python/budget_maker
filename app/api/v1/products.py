@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, Response, UploadFile
 
 from app.api.dependencies import get_current_user, get_product_use_cases
 from app.application.use_cases.product_use_cases import ProductUseCases
@@ -52,6 +52,42 @@ async def search_products(
         return await uc.search(params, str(request.base_url))
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.get("/export")
+async def export_products(
+    request: Request,
+    q: str | None = None,
+    sku: str | None = None,
+    category_id: str | None = None,
+    category_slug: str | None = None,
+    tags: list[str] | None = Query(default=None),
+    min_price: float | None = None,
+    max_price: float | None = None,
+    sort_by: SortBy = SortBy.name_asc,
+    _: User = Depends(get_current_user),
+    uc: ProductUseCases = Depends(get_product_use_cases),
+):
+    params = ProductSearchParams(
+        q=q,
+        sku=sku,
+        category_id=category_id,
+        category_slug=category_slug,
+        tags=tags,
+        min_price=min_price,
+        max_price=max_price,
+        sort_by=sort_by,
+    )
+    try:
+        excel_bytes = await uc.export_products_to_excel(params)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    return Response(
+        content=excel_bytes,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="productos.xlsx"'},
+    )
 
 
 @router.get("/", response_model=list[ProductResponse])

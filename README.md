@@ -191,6 +191,7 @@ Las semillas son idempotentes: un arranque limpio crea colecciones, índices y d
 | POST | `/api/v1/products/{id}/image` | ****** Subir una imagen (PNG/JPEG/WebP, max 2MB, hasta 10 por producto; persiste URL pública en Supabase) |
 | DELETE | `/api/v1/products/{id}/images/{filename}` | ****** Eliminar una imagen específica por basename sin cambiar el contrato del endpoint |
 | POST | `/api/v1/products/import` | Bearer | Importar desde Excel (.xlsx) |
+| GET | `/api/v1/products/export` | Bearer | Exportar catálogo a Excel (.xlsx) con soporte de filtros (`q`, `category_slug`, etc.) |
 
 #### Búsqueda y filtrado — `GET /api/v1/products/search`
 

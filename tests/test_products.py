@@ -1274,3 +1274,97 @@ async def test_import_excel_truncates_excess_tags(client: AsyncClient, auth_head
     res = await client.get("/api/v1/products/")
     products = {product["sku"]: product for product in res.json()}
     assert len(products["EXC-001"]["tags"]) == 15
+
+
+@pytest.mark.asyncio
+async def test_export_products_requires_auth(client: AsyncClient):
+    res = await client.get("/api/v1/products/export")
+    assert res.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_export_products_all_and_filtered(client: AsyncClient, auth_headers: dict[str, str]):
+    from openpyxl import load_workbook
+
+    # Crear categorías
+    cat_res = await client.post(
+        "/api/v1/categories/",
+        json={"name": "Pinturas", "slug": "pinturas"},
+        headers=auth_headers,
+    )
+    assert cat_res.status_code == 201
+    cat_id = cat_res.json()["id"]
+
+    # Crear productos de prueba
+    await client.post(
+        "/api/v1/products/",
+        json={
+            "name": "Esmalte Brillante",
+            "sku": "EXP-001",
+            "cost": 15.50,
+            "unit": "galón",
+            "currency": "USD",
+            "category_ids": [cat_id],
+            "tags": ["esmalte", "brillante"],
+            "colors": [{"name": "Rojo", "hex": "#FF0000"}],
+        },
+        headers=auth_headers,
+    )
+    await client.post(
+        "/api/v1/products/",
+        json={
+            "name": "Brocha 2 pulgadas",
+            "sku": "EXP-002",
+            "cost": 3.00,
+            "unit": "unidad",
+            "currency": "USD",
+            "tags": ["brocha", "accesorio"],
+        },
+        headers=auth_headers,
+    )
+
+    # 1. Exportar todo
+    res_all = await client.get("/api/v1/products/export", headers=auth_headers)
+    assert res_all.status_code == 200
+    assert "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" in res_all.headers["content-type"]
+    assert "productos.xlsx" in res_all.headers.get("content-disposition", "")
+
+    wb = load_workbook(io.BytesIO(res_all.content))
+    ws = wb.active
+    rows = list(ws.iter_rows(values_only=True))
+    assert len(rows) >= 3
+    headers = [str(h).strip().lower() for h in rows[0]]
+    assert "sku" in headers
+    assert "nombre" in headers
+    assert "costo" in headers
+    assert "categoria" in headers
+    assert "categorias_nombres" in headers
+
+    sku_idx = headers.index("sku")
+    all_skus = [r[sku_idx] for r in rows[1:]]
+    assert "EXP-001" in all_skus
+    assert "EXP-002" in all_skus
+
+    # 2. Exportar con filtro q
+    res_filtered = await client.get("/api/v1/products/export?q=Esmalte", headers=auth_headers)
+    assert res_filtered.status_code == 200
+    wb_filt = load_workbook(io.BytesIO(res_filtered.content))
+    rows_filt = list(wb_filt.active.iter_rows(values_only=True))
+    filt_skus = [r[sku_idx] for r in rows_filt[1:]]
+    assert "EXP-001" in filt_skus
+    assert "EXP-002" not in filt_skus
+
+    # 3. Validar re-importación limpia del archivo exportado
+    res_reimport = await client.post(
+        "/api/v1/products/import",
+        files={
+            "file": (
+                "exported.xlsx",
+                io.BytesIO(res_filtered.content),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+        },
+        headers=auth_headers,
+    )
+    assert res_reimport.status_code == 200
+    assert res_reimport.json()["updated"] >= 1

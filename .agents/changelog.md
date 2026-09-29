@@ -4,6 +4,30 @@ Registro de iteraciones del proyecto.
 
 ---
 
+## [2026-09-29] Iteración 22 — Exportación de productos a Excel (.xlsx) y flujo multi-agente
+
+### Realizado
+- Se implementó el método `generate_products_excel` en `ExcelService` para estructurar libros `.xlsx` estilizados con cabeceras y anchos autoajustables.
+- Se agregaron las columnas completas del catálogo (`id`, `nombre`, `sku`, `costo`, `unidad`, `moneda`, `descripcion`, `marca`, `colores`, `categoria`, `categorias_nombres`, `tags`, `imagenes`), garantizando compatibilidad bidireccional y re-importación limpia en `parse_products`.
+- Se implementó `_build_search_query` y `search_all` en `ProductRepository` para consultas de catálogo completas respetando los filtros acumulativos.
+- Se implementó el caso de uso `export_products_to_excel` en `ProductUseCases`.
+- Se expuso el endpoint protegido `GET /api/v1/products/export` en `products.py`, retornando el archivo Excel descargable.
+- Se crearon pruebas unitarias en `test_products.py` verificando la autenticación requerida, exportación total, exportación con filtro de búsqueda `q` y ciclo completo de exportación y re-importación sin errores.
+- Se actualizó `README.md` y `PRD.md`.
+- Se orquestó y delegó autónomamente mediante Herdr a `frontend-agent` la integración en la SPA (`adminApi.js` y `ProductsPage.jsx`) utilizando `/impeccable`, la cual concluyó con 0 defectos y `npm run build` exitoso (código 0).
+
+### Archivos modificados
+- `app/infrastructure/services/excel_service.py`
+- `app/infrastructure/repositories/product_repo.py`
+- `app/application/use_cases/product_use_cases.py`
+- `app/api/v1/products.py`
+- `tests/test_products.py`
+- `README.md`
+- `PRD.md`
+- `.agents/changelog.md`
+
+---
+
 ## [2026-09-29] Iteración 21 — Parámetro global `use_tax` para activar/desactivar impuestos
 
 ### Realizado

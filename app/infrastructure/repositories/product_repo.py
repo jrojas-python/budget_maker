@@ -121,8 +121,8 @@ class ProductRepository(BaseRepository):
             {"$pull": {"category_ids": oid}}
         )
 
-    async def search(self, params: ProductSearchParams, resolved_category_id: str | None = None) -> tuple[list[Product], int]:
-        """Búsqueda avanzada con filtros acumulativos, paginación y ordenamiento."""
+    def _build_search_query(self, params: ProductSearchParams, resolved_category_id: str | None = None) -> dict[str, Any]:
+        """Construye el filtro de búsqueda a partir de ProductSearchParams."""
         query: dict[str, Any] = {}
 
         if params.q:
@@ -153,6 +153,11 @@ class ProductRepository(BaseRepository):
                 cost_filter["$lte"] = params.max_price
             query["cost"] = cost_filter
 
+        return query
+
+    async def search(self, params: ProductSearchParams, resolved_category_id: str | None = None) -> tuple[list[Product], int]:
+        """Búsqueda avanzada con filtros acumulativos, paginación y ordenamiento."""
+        query = self._build_search_query(params, resolved_category_id)
         find_query = Product.find(query)
         total = await find_query.count()
 
@@ -160,3 +165,10 @@ class ProductRepository(BaseRepository):
         results = await find_query.sort(sort_spec).skip((params.page - 1) * params.limit).limit(params.limit).to_list()
 
         return results, total
+
+    async def search_all(self, params: ProductSearchParams, resolved_category_id: str | None = None) -> list[Product]:
+        """Búsqueda sin paginación para exportación con filtros acumulativos y ordenamiento."""
+        query = self._build_search_query(params, resolved_category_id)
+        find_query = Product.find(query)
+        sort_spec = SORT_MAP.get(params.sort_by, [("name", pymongo.ASCENDING)])
+        return await find_query.sort(sort_spec).to_list()
