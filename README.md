@@ -348,7 +348,7 @@ Acepta `from`, `to` y `top_limit`. Sin rango usa los últimos 30 días; el máxi
 - **Productos:** CRUD con imagenes (hasta 10), tags normalizados, descripcion, marca, selector de categorias, gestion de colores (hasta 6), thumbnail en tabla
 - **Categorías:** CRUD con slug auto-generado
 - **Usuarios:** Crear/eliminar administradores
-- **Configuración:** Editar impuesto, expiración de links, título, subtítulo, logo e icono del sitio
+- **Configuración:** Editar impuesto (activar/desactivar con `use_tax` y porcentaje), expiración de links, fotos en PDF, título, subtítulo, logo e icono del sitio
 - **Importar:** Carga masiva desde Excel (.xlsx)
 
 ## Tests
@@ -365,6 +365,7 @@ Los tests usan una BD separada (`budget_maker_test`) que se elimina al finalizar
 
 ## Notas Técnicas
 
+- El parámetro global `use_tax` permite activar o desactivar el impuesto en todo el sistema: si es `false`, los presupuestos se calculan con `tax_percent = 0.0`, `tax_amount = 0.0`, `total = subtotal`, y se suprime la línea de desglose de impuesto en PDF, vista web y catálogo. Presupuestos históricos emitidos previamente con impuestos preservan su snapshot.
 - Los links de presupuesto toman el TTL vigente al momento de creación (`link_ttl_minutes`) y no cambian retroactivamente.
 - Los identificadores públicos `code` y `uuid` tienen índice único en MongoDB para evitar duplicados persistentes.
 - `code` mantiene el formato comercial `BM-YYYYMMDD-XXXX`; si hay colisión se reintenta de forma acotada.

@@ -42,3 +42,11 @@ API RESTful para la generación y gestión de presupuestos y cotizaciones de pro
 - Al correr pruebas locales fuera del contenedor de la API, asegúrate de levantar únicamente el servicio `mongodb` (`docker compose up -d mongodb`) para evitar colisiones en el puerto `8000`.
 
 <!-- /bmad:context -->
+
+## Orquestación Multi-Agente (Herdr)
+
+- **Identidad local**: `backend-agent`
+- **Agente vecino**: `frontend-agent` (ubicado en `~/Documents/pyfiles/budget_maker_frontend`)
+- **Regla de autonomía**: Ante cualquier requerimiento de lógica de negocio, endpoints o features (creación, modificación o eliminación), `backend-agent` implementa y valida primero el cambio en el backend y luego define y envía de forma autónoma la tarea equivalente a `frontend-agent` mediante `herdr agent prompt frontend-agent "..." --wait` sin solicitar permiso previo al usuario.
+- **Protocolo estructurado**: Cada mensaje de delegación debe incluir: Título, Contexto/Motivación, Contrato OpenAPI/Payloads (request/response), Cambios esperados en Frontend (`src/services/api.js`, etc.), Criterios de aceptación y Verificación (`npm run build`).
+- **Escalado inmediato**: Si `frontend-agent` reporta fallas o queda en estado `blocked`, `backend-agent` detiene el proceso y escala inmediatamente al usuario con los logs (`herdr agent read frontend-agent`).

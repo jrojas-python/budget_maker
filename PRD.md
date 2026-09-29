@@ -80,3 +80,30 @@ Servicio de generación de presupuestos/cotizaciones de productos. API RESTful c
 ### WhatsApp
 - Formato con markdown WhatsApp (`*bold*`)
 - URL: `https://wa.me/?text={url_encoded_text}`
+
+## Protocolo de Orquestación Multi-Agente con Herdr
+
+### Identidades y Roles
+- **backend-agent**: Agente local (FastAPI, MongoDB Beanie ODM, Clean Architecture en `budget_maker`). Orquestador principal cuando recibe tareas de negocio o API.
+- **frontend-agent**: Agente vecino (React SPA, Vite en `~/Documents/pyfiles/budget_maker_frontend`). Encargado del consumo de la API, estado del cliente y UI.
+- **Entorno de Comunicación**: Terminal multiplexer Herdr (`herdr agent prompt`, `herdr agent read`, etc.).
+
+### Flujo de Trabajo Autónomo (Backend-First)
+Siempre que el usuario solicite implementar una nueva lógica de negocio, crear/modificar/eliminar endpoints o alterar features:
+1. **Implementación y Validación Backend**: `backend-agent` diseña e implementa primero el modelo, schema, caso de uso, repositorio y endpoint FastAPI, asegurando su correcto funcionamiento.
+2. **Generación Automática de Tarea para Frontend**: Sin solicitar permiso previo al usuario, `backend-agent` define la tarea equivalente correspondiente para la SPA de frontend.
+3. **Delegación Vía Herdr**: `backend-agent` envía la tarea a `frontend-agent` mediante:
+   ```bash
+   herdr agent prompt frontend-agent "<payload_estructurado>" --wait
+   ```
+4. **Estructura Obligatoria del Mensaje de Delegación**:
+   - **Título**: Descripción concisa de la tarea delegada.
+   - **Contexto / Motivación**: Qué cambio se efectuó en el sistema y por qué.
+   - **Contrato de API**: Método HTTP, URL, parámetros, headers, schemas/payloads JSON de solicitud y respuesta, códigos de estado.
+   - **Cambios Esperados en Frontend**: Archivos/servicios a modificar (`src/services/api.js`, `src/services/adminApi.js`), rutas, páginas o componentes de React.
+   - **Criterios de Aceptación**: Reglas funcionales requeridas en la vista.
+   - **Comando de Verificación**: Ejecución obligatoria de `npm run build` en el frontend para validar que no haya regresiones.
+5. **Manejo de Bloqueos y Escalado Inmediato**:
+   - Si `frontend-agent` completa su labor exitosamente, `backend-agent` valida la respuesta con `herdr agent read frontend-agent` y consolida el reporte final al usuario.
+   - Si `frontend-agent` falla, genera errores no recuperables o queda en estado `blocked`, `backend-agent` detiene de inmediato el flujo, consulta los logs con `herdr agent read frontend-agent` y escala la incidencia al usuario explicando el bloqueo.
+

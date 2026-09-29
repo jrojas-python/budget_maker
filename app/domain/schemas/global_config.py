@@ -16,12 +16,14 @@ class GlobalConfigUpdate(BaseModel):
 
 class GlobalBusinessConfigResponse(BaseModel):
     tax_rate: float
+    use_tax: bool = True
     link_ttl_minutes: int
     show_product_photos_in_pdf: bool
 
 
 class GlobalBusinessConfigUpdate(BaseModel):
     tax_rate: float = Field(..., ge=0, le=100)
+    use_tax: bool = True
     link_ttl_minutes: int = Field(..., ge=1, le=10080)
     show_product_photos_in_pdf: bool
 

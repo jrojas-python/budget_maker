@@ -4,6 +4,54 @@ Registro de iteraciones del proyecto.
 
 ---
 
+## [2026-09-29] Iteración 21 — Parámetro global `use_tax` para activar/desactivar impuestos
+
+### Realizado
+- Se incorporó el campo booleano `use_tax` en `GlobalConfig`, `GlobalBusinessConfigResponse` y `GlobalBusinessConfigUpdate`.
+- Se adaptó `ConfigRepository` y `ConfigUseCases` para persistir, obtener y actualizar `use_tax` con compatibilidad para valores legacy.
+- Se añadió `use_tax` al modelo `Budget` y schema `BudgetResponse` como parte inmutable del snapshot de cotización.
+- Se actualizó el caso de uso `create_budget`, `update_budget` y `_calculate_amounts`: cuando `use_tax == False`, no se calculan impuestos (`tax_percent = 0.0`, `tax_amount = 0.0`, `total = subtotal`).
+- Se condicionó la visualización de la fila de impuesto en la plantilla Jinja2 (`budget_view.html`), eliminándola de la vista web y del PDF cuando `use_tax` sea false.
+- Se adaptó el catálogo público (`catalog.html` y `catalog.js`) para consultar `use_tax` y omitir las líneas de impuesto del carrito y modal si está desactivado.
+- Se ampliaron las pruebas en `test_config.py` y `test_budgets.py` cubriendo el toggle de `use_tax` y la emisión/renderizado de presupuestos sin impuestos.
+- Se actualizó `README.md`.
+
+### Archivos modificados
+- `app/domain/models/global_config.py`
+- `app/domain/schemas/global_config.py`
+- `app/infrastructure/repositories/config_repo.py`
+- `app/application/use_cases/config_use_cases.py`
+- `app/api/v1/config.py`
+- `app/domain/models/budget.py`
+- `app/domain/schemas/budget.py`
+- `app/application/use_cases/budget_use_cases.py`
+- `web/templates/public/budget_view.html`
+- `web/templates/public/catalog.html`
+- `web/static/js/catalog.js`
+- `tests/test_config.py`
+- `tests/test_budgets.py`
+- `README.md`
+- `.agents/changelog.md`
+
+---
+
+## [2026-09-28] Iteración 20 — Protocolo de Orquestación Multi-Agente con Herdr
+
+### Realizado
+- Se definió e implementó el protocolo formal de orquestación multi-agente con Herdr entre `backend-agent` (`budget_maker`) y `frontend-agent` (`budget_maker_frontend`).
+- Se estableció el flujo de trabajo autónomo (Backend-first): `backend-agent` implementa y verifica en backend y formula la tarea equivalente para frontend sin pedir confirmación manual previa.
+- Se fijó la estructura obligatoria de comunicación inter-agente (Título, Contexto/Motivación, Contrato OpenAPI/Payloads JSON, Cambios esperados en UI/servicios, Criterios de aceptación y Verificación).
+- Se configuró la política de escalado inmediato al usuario ante fallos o estados `blocked` del agente frontend.
+- Se documentó el protocolo en `PRD.md` y `AGENTS.md` de `budget_maker`.
+- Se orquestó la primera tarea vía Herdr delegando a `frontend-agent` la creación de su `PRD.md`, actualización de `AGENTS.md` y verificación con `npm run build`, la cual concluyó exitosamente con código de salida 0.
+
+### Archivos modificados
+- `PRD.md`
+- `AGENTS.md`
+- `.agents/changelog.md`
+
+---
+
 ## [2026-09-22] Iteración 19 — Creación pública de presupuestos
 
 ### Realizado

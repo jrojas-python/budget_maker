@@ -26,6 +26,7 @@ async def test_get_global_config_seeded(client: AsyncClient):
     assert res.status_code == 200
     data = res.json()
     assert isinstance(data["tax_rate"], (int, float))
+    assert isinstance(data["use_tax"], bool)
     assert isinstance(data["link_ttl_minutes"], int)
     assert isinstance(data["show_product_photos_in_pdf"], bool)
 
@@ -70,6 +71,7 @@ async def test_init_beanie_and_seeds_are_idempotent_on_empty_database(_init_db):
 async def test_update_global_config_valid_payload(client: AsyncClient, auth_headers: dict[str, str]):
     payload = {
         "tax_rate": 17.5,
+        "use_tax": True,
         "link_ttl_minutes": 45,
         "show_product_photos_in_pdf": False,
     }
@@ -84,6 +86,40 @@ async def test_update_global_config_valid_payload(client: AsyncClient, auth_head
     typed_tax = await client.get("/api/v1/config/tax_rate")
     assert typed_tax.status_code == 200
     assert typed_tax.json()["value"] == payload["tax_rate"]
+
+    use_tax_entry = await client.get("/api/v1/config/use_tax")
+    assert use_tax_entry.status_code == 200
+    assert use_tax_entry.json()["value"] is True
+
+
+@pytest.mark.asyncio
+async def test_update_global_config_use_tax_toggle(client: AsyncClient, auth_headers: dict[str, str]):
+    res = await client.put(
+        "/api/v1/config/global",
+        json={
+            "tax_rate": 18.0,
+            "use_tax": False,
+            "link_ttl_minutes": 30,
+            "show_product_photos_in_pdf": True,
+        },
+        headers=auth_headers,
+    )
+    assert res.status_code == 200
+    assert res.json()["use_tax"] is False
+    assert res.json()["tax_rate"] == 18.0
+
+    res = await client.put(
+        "/api/v1/config/global",
+        json={
+            "tax_rate": 18.0,
+            "use_tax": True,
+            "link_ttl_minutes": 30,
+            "show_product_photos_in_pdf": True,
+        },
+        headers=auth_headers,
+    )
+    assert res.status_code == 200
+    assert res.json()["use_tax"] is True
 
 
 @pytest.mark.asyncio

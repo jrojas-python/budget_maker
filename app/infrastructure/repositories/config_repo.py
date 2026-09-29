@@ -31,8 +31,10 @@ class ConfigRepository:
             raise ValueError(f"Configuración global incompleta. Faltan valores críticos: {', '.join(missing)}")
 
         show_photos = legacy_values.get("show_product_photos_in_pdf", True)
+        use_tax = legacy_values.get("use_tax", True)
         return GlobalConfig(
             tax_rate=legacy_values["tax_rate"],
+            use_tax=bool(use_tax),
             link_ttl_minutes=legacy_values["link_ttl_minutes"],
             show_product_photos_in_pdf=bool(show_photos),
         )
@@ -81,6 +83,8 @@ class ConfigRepository:
         normalized_key = _KEY_ALIASES.get(key, key)
         if normalized_key == "tax_rate":
             config.tax_rate = float(value)
+        elif normalized_key == "use_tax":
+            config.use_tax = _coerce_bool(value)
         elif normalized_key == "link_ttl_minutes":
             config.link_ttl_minutes = int(value)
         elif normalized_key == "show_product_photos_in_pdf":
@@ -106,9 +110,11 @@ class ConfigRepository:
         tax_rate: float,
         link_ttl_minutes: int,
         show_product_photos_in_pdf: bool,
+        use_tax: bool = True,
     ) -> GlobalConfig:
         config = await self.ensure_global_config()
         config.tax_rate = tax_rate
+        config.use_tax = use_tax
         config.link_ttl_minutes = link_ttl_minutes
         config.show_product_photos_in_pdf = show_product_photos_in_pdf
         await config.save()
@@ -163,6 +169,11 @@ class ConfigRepository:
                 "value": config.show_product_photos_in_pdf,
                 "description": self._description(config, "show_product_photos_in_pdf"),
             },
+            {
+                "key": "use_tax",
+                "value": config.use_tax,
+                "description": self._description(config, "use_tax"),
+            },
             {"key": _LEGACY_TAX_KEY, "value": config.tax_rate, "description": self._description(config, "tax_rate")},
             {
                 "key": _LEGACY_TTL_KEY,
@@ -178,6 +189,8 @@ class ConfigRepository:
         normalized_key = _KEY_ALIASES.get(key, key)
         if normalized_key == "tax_rate":
             value: ConfigValue = config.tax_rate
+        elif normalized_key == "use_tax":
+            value = config.use_tax
         elif normalized_key == "link_ttl_minutes":
             value = config.link_ttl_minutes
         elif normalized_key == "show_product_photos_in_pdf":
@@ -195,7 +208,7 @@ class ConfigRepository:
 
     async def _load_legacy_business_values(self) -> dict[str, ConfigValue]:
         collection = GlobalConfig.get_motor_collection()
-        docs = await collection.find({"key": {"$in": [_LEGACY_TAX_KEY, _LEGACY_TTL_KEY, "show_product_photos_in_pdf"]}}).to_list(length=20)
+        docs = await collection.find({"key": {"$in": [_LEGACY_TAX_KEY, _LEGACY_TTL_KEY, "show_product_photos_in_pdf", "use_tax"]}}).to_list(length=20)
         values: dict[str, ConfigValue] = {}
         for doc in docs:
             key = str(doc.get("key", "")).strip()
@@ -212,6 +225,8 @@ class ConfigRepository:
                     raise ValueError("Valor inválido para tiempo_expiracion_link_minutos en datos legacy") from exc
             elif key == "show_product_photos_in_pdf":
                 values["show_product_photos_in_pdf"] = _coerce_bool(value)
+            elif key == "use_tax":
+                values["use_tax"] = _coerce_bool(value)
         return values
 
     async def _load_legacy_entries(self) -> list[dict[str, ConfigValue | str]]:
@@ -250,7 +265,7 @@ def _coerce_bool(value: ConfigValue) -> bool:
             return True
         if normalized in {"0", "false", "no", "off", ""}:
             return False
-    raise ValueError("Valor inválido para show_product_photos_in_pdf")
+    raise ValueError("Valor booleano inválido")
 
 
 def _normalize_payment_methods(methods: list[str]) -> tuple[list[str], bool]:

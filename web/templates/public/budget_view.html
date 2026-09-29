@@ -81,7 +81,9 @@
 
     <div class="totals">
         <p>Subtotal: <strong>${{ "%.2f"|format(budget.subtotal) }}</strong></p>
+        {% if use_tax %}
         <p>Impuesto ({{ budget.tax_percent }}%): <strong>${{ "%.2f"|format(budget.tax_amount) }}</strong></p>
+        {% endif %}
         <p class="grand-total">Total: <strong>${{ "%.2f"|format(budget.total) }}</strong></p>
     </div>
 

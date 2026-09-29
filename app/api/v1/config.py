@@ -41,6 +41,7 @@ async def get_global_config(uc: ConfigUseCases = Depends(get_config_use_cases)):
     config = await uc.get_global_config()
     return GlobalBusinessConfigResponse(
         tax_rate=config.tax_rate,
+        use_tax=config.use_tax,
         link_ttl_minutes=config.link_ttl_minutes,
         show_product_photos_in_pdf=config.show_product_photos_in_pdf,
     )
@@ -56,9 +57,11 @@ async def update_global_config(
         tax_rate=body.tax_rate,
         link_ttl_minutes=body.link_ttl_minutes,
         show_product_photos_in_pdf=body.show_product_photos_in_pdf,
+        use_tax=body.use_tax,
     )
     return GlobalBusinessConfigResponse(
         tax_rate=config.tax_rate,
+        use_tax=config.use_tax,
         link_ttl_minutes=config.link_ttl_minutes,
         show_product_photos_in_pdf=config.show_product_photos_in_pdf,
     )

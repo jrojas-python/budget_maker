@@ -4,6 +4,7 @@
  */
 
 const cart = {};
+let useTax = true;
 let taxPercent = 18;
 let currentPage = 1;
 let totalPages = 1;
@@ -11,8 +12,18 @@ let debounceTimer = null;
 
 async function loadTax() {
     try {
-        const res = await apiFetch('/api/v1/config/porcentaje_impuesto');
-        if (res.ok) { const c = await res.json(); taxPercent = parseFloat(c.value); }
+        const res = await apiFetch('/api/v1/config/global');
+        if (res.ok) {
+            const c = await res.json();
+            taxPercent = parseFloat(c.tax_rate ?? 18);
+            useTax = c.use_tax !== false;
+        } else {
+            const fallback = await apiFetch('/api/v1/config/porcentaje_impuesto');
+            if (fallback.ok) {
+                const c = await fallback.json();
+                taxPercent = parseFloat(c.value);
+            }
+        }
     } catch {}
 }
 
@@ -212,12 +223,20 @@ function updateCart() {
         return `<div class="cart-item"><span>${colorInfo} ${p.name} × ${qty}</span><span>$${line.toFixed(2)}</span></div>`;
     }).join('');
 
-    const taxAmt = subtotal * (taxPercent / 100);
+    const taxAmt = useTax ? subtotal * (taxPercent / 100) : 0;
     const total = subtotal + taxAmt;
 
     document.getElementById('cart-subtotal').textContent = '$' + subtotal.toFixed(2);
-    document.getElementById('cart-tax-pct').textContent = taxPercent;
-    document.getElementById('cart-tax').textContent = '$' + taxAmt.toFixed(2);
+    const cartTaxLine = document.getElementById('cart-tax-line');
+    if (cartTaxLine) {
+        if (!useTax) {
+            cartTaxLine.style.display = 'none';
+        } else {
+            cartTaxLine.style.display = '';
+            document.getElementById('cart-tax-pct').textContent = taxPercent;
+            document.getElementById('cart-tax').textContent = '$' + taxAmt.toFixed(2);
+        }
+    }
     document.getElementById('cart-total').textContent = '$' + total.toFixed(2);
 
     totalsEl.classList.remove('hidden');
@@ -277,6 +296,11 @@ async function createBudget() {
         }).join('');
 
         document.getElementById('modal-subtotal').textContent = '$' + b.subtotal.toFixed(2);
+        const modalTaxLine = document.getElementById('modal-tax-line');
+        const showModalTax = b.use_tax !== false && (b.tax_amount > 0 || b.tax_percent > 0);
+        if (modalTaxLine) {
+            modalTaxLine.style.display = showModalTax ? '' : 'none';
+        }
         document.getElementById('modal-tax-pct').textContent = b.tax_percent;
         document.getElementById('modal-tax').textContent = '$' + b.tax_amount.toFixed(2);
         document.getElementById('modal-total').textContent = '$' + b.total.toFixed(2);

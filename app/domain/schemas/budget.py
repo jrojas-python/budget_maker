@@ -52,6 +52,7 @@ class BudgetResponse(BaseModel):
     subtotal: float
     tax_percent: float
     tax_amount: float
+    use_tax: bool = True
     total: float
     payment_method: str | None = None
     link_ttl_minutes: int

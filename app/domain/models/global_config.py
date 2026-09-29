@@ -8,6 +8,7 @@ class GlobalConfig(Document):
 
     singleton_key: str = Field(default="global", description="Identificador único del documento global")
     tax_rate: float = Field(default=18.0, ge=0, le=100)
+    use_tax: bool = Field(default=True, description="Define si el impuesto está activo en el sistema")
     link_ttl_minutes: int = Field(default=30, ge=1, le=10080)
     show_product_photos_in_pdf: bool = True
     payment_methods: list[str] = Field(default_factory=list)

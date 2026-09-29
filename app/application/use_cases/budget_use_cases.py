@@ -44,9 +44,11 @@ class BudgetUseCases:
         """Crea un presupuesto congelando montos como snapshot inmutable."""
         config = await self._config_repo.get_effective_global_config()
         self._validate_payment_method(data.payment_method, config.payment_methods)
+        effective_use_tax = bool(config.use_tax)
         items, subtotal, tax_percent, tax_amount, total = await self._calculate_amounts(
             data.items,
-            float(config.tax_rate),
+            float(config.tax_rate) if effective_use_tax else 0.0,
+            use_tax=effective_use_tax,
         )
         client_id, client_info = await self._resolve_client_snapshot(data.client_info)
         link_ttl_minutes = int(config.link_ttl_minutes)
@@ -67,6 +69,7 @@ class BudgetUseCases:
                 "subtotal": round(subtotal, 2),
                 "tax_percent": tax_percent,
                 "tax_amount": round(tax_amount, 2),
+                "use_tax": effective_use_tax,
                 "total": round(total, 2),
                 "payment_method": data.payment_method,
                 "link_ttl_minutes": link_ttl_minutes,
@@ -103,9 +106,11 @@ class BudgetUseCases:
         config = None
         if data.items is not None:
             config = await self._config_repo.get_effective_global_config()
+            effective_use_tax = bool(config.use_tax)
             items, subtotal, tax_percent, tax_amount, total = await self._calculate_amounts(
                 data.items,
-                float(config.tax_rate),
+                float(config.tax_rate) if effective_use_tax else 0.0,
+                use_tax=effective_use_tax,
             )
             update_data.update(
                 {
@@ -113,6 +118,7 @@ class BudgetUseCases:
                     "subtotal": round(subtotal, 2),
                     "tax_percent": tax_percent,
                     "tax_amount": round(tax_amount, 2),
+                    "use_tax": effective_use_tax,
                     "total": round(total, 2),
                 }
             )
@@ -170,6 +176,10 @@ class BudgetUseCases:
         site_subtitle = str(config.extra_settings.get("site_subtitle", "")).strip()
         show_photos = bool(config.show_product_photos_in_pdf)
 
+        budget_use_tax = getattr(budget, "use_tax", None)
+        if budget_use_tax is None:
+            budget_use_tax = budget.tax_percent > 0 or budget.tax_amount > 0
+
         logo_path = str(config.extra_settings.get("site_logo", "")).strip()
         logo_url = self._resolve_branding_asset(logo_path, for_pdf=for_pdf)
 
@@ -194,6 +204,7 @@ class BudgetUseCases:
         return {
             "budget": budget,
             "budget_items": budget_items,
+            "use_tax": bool(budget_use_tax),
             "show_product_photos_in_pdf": show_photos,
             "site_title": site_title,
             "site_subtitle": site_subtitle,
@@ -239,6 +250,7 @@ class BudgetUseCases:
         self,
         requested_items: list[BudgetItemCreate],
         tax_percent: float,
+        use_tax: bool = True,
     ) -> tuple[list[BudgetItem], float, float, float, float]:
         items: list[BudgetItem] = []
         subtotal = 0.0
@@ -275,7 +287,11 @@ class BudgetUseCases:
                 )
             )
             subtotal += line_total
-        tax_amount = subtotal * (tax_percent / 100)
+        if not use_tax:
+            tax_percent = 0.0
+            tax_amount = 0.0
+        else:
+            tax_amount = subtotal * (tax_percent / 100)
         return items, subtotal, tax_percent, tax_amount, subtotal + tax_amount
 
     async def _resolve_client_snapshot(

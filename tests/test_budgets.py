@@ -83,6 +83,38 @@ async def test_new_budget_uses_updated_tax_and_ttl(client: AsyncClient, auth_hea
     assert budget["tax_amount"] == 10
     assert budget["total"] == 110
     assert budget["link_ttl_minutes"] == 15
+    assert budget["use_tax"] is True
+
+
+@pytest.mark.asyncio
+async def test_budget_creation_and_rendering_with_use_tax_disabled(client: AsyncClient, auth_headers: dict):
+    await _create_product(client, auth_headers)
+
+    res = await client.put(
+        "/api/v1/config/global",
+        json={"tax_rate": 18, "use_tax": False, "link_ttl_minutes": 30, "show_product_photos_in_pdf": True},
+        headers=auth_headers,
+    )
+    assert res.status_code == 200
+
+    created = await client.post("/api/v1/budgets/", json=_budget_payload())
+    assert created.status_code == 201
+    budget = created.json()
+    assert budget["use_tax"] is False
+    assert budget["tax_percent"] == 0.0
+    assert budget["tax_amount"] == 0.0
+    assert budget["subtotal"] == 100.0
+    assert budget["total"] == 100.0
+
+    public_view = await client.get(f"/presupuesto/{budget['uuid']}")
+    assert public_view.status_code == 200
+    assert "Impuesto (" not in public_view.text
+
+    await client.put(
+        "/api/v1/config/global",
+        json={"tax_rate": 18, "use_tax": True, "link_ttl_minutes": 30, "show_product_photos_in_pdf": True},
+        headers=auth_headers,
+    )
 
 
 @pytest.mark.asyncio

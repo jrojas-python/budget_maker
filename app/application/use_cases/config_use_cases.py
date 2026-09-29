@@ -49,11 +49,13 @@ class ConfigUseCases:
         tax_rate: float,
         link_ttl_minutes: int,
         show_product_photos_in_pdf: bool,
+        use_tax: bool = True,
     ) -> GlobalConfig:
         return await self._repo.update_global_config(
             tax_rate=tax_rate,
             link_ttl_minutes=link_ttl_minutes,
             show_product_photos_in_pdf=show_product_photos_in_pdf,
+            use_tax=use_tax,
         )
 
     async def seed_defaults(self) -> None:
@@ -61,6 +63,8 @@ class ConfigUseCases:
         config = await self._repo.ensure_global_config()
         if "tax_rate" not in config.descriptions:
             config.descriptions["tax_rate"] = "Porcentaje de impuesto aplicado al presupuesto"
+        if "use_tax" not in config.descriptions:
+            config.descriptions["use_tax"] = "Define si el impuesto se calcula y aplica a los presupuestos"
         if "link_ttl_minutes" not in config.descriptions:
             config.descriptions["link_ttl_minutes"] = "Minutos antes de que expire el link del presupuesto"
         if "show_product_photos_in_pdf" not in config.descriptions:

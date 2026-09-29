@@ -51,6 +51,7 @@ class Budget(Document):
     subtotal: float = 0.0
     tax_percent: float = 0.0
     tax_amount: float = 0.0
+    use_tax: bool = True
     total: float = 0.0
     payment_method: str | None = None
     link_ttl_minutes: int = 30
