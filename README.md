@@ -313,6 +313,8 @@ Acepta `from`, `to` y `top_limit`. Sin rango usa los últimos 30 días; el máxi
 | GET | `/api/v1/config/` | — | Listar configuración |
 | GET | `/api/v1/config/global` | — | Obtener configuración global tipada |
 | PUT | `/api/v1/config/global` | Requerida | Actualizar configuración global tipada |
+| GET | `/api/v1/config/company` | - | Datos de compañía (`company_name`, `company_phone`, `company_address`, `company_ruc`, `show_company_info`, `company_info_position`) |
+| PUT | `/api/v1/config/company` | Requerida | Actualización parcial de datos de compañía; vacío = campo oculto; `company_info_position` ∈ `header`/`footer` (422 si no) |
 | GET | `/api/v1/config/payment-methods` | — | Listar métodos de pago dinámicos |
 | POST | `/api/v1/config/payment-methods` | Requerida | Agregar método de pago dinámico |
 | DELETE | `/api/v1/config/payment-methods/{method_name}` | Requerida | Eliminar método de pago dinámico |
@@ -480,3 +482,9 @@ El modo `--dry-run` informa cuántos clientes y asociaciones produciría sin per
   "colors": []
 }
 ```
+
+### Datos de compañía (footer/header)
+
+- El administrador gestiona nombre, teléfono, dirección y RUC desde `PUT /api/v1/config/company` (se guardan en `extra_settings`; `company_ruc` es retrocompatible).
+- `show_company_info` activa o desactiva la visibilidad en catálogo, web temporal, PDF y texto de WhatsApp. Los campos vacíos nunca se muestran.
+- `company_info_position` (`header`/`footer`) aplica al catálogo y a la web temporal del presupuesto. El PDF y la versión texto siempre lo muestran al pie.

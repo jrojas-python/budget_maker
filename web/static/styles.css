@@ -401,3 +401,10 @@ h1 {
         display: none !important;
     }
 }
+
+.company-info { font-size: 0.85rem; color: #555; line-height: 1.5; }
+.company-info p { margin: 0; }
+.company-info-name { font-weight: 700; color: #222; }
+.company-info-header { margin: 0.5rem 0 1rem; padding-bottom: 0.5rem; border-bottom: 1px solid #ddd; }
+.budget-footer { margin-top: 2rem; padding-top: 0.75rem; border-top: 1px solid #ddd; text-align: center; }
+.pdf-mode .budget-footer { page-break-inside: avoid; }

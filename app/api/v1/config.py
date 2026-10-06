@@ -6,6 +6,8 @@ from app.api.dependencies import get_config_use_cases, get_current_user
 from app.application.use_cases.config_use_cases import ConfigUseCases
 from app.domain.models.user import User
 from app.domain.schemas.global_config import (
+    CompanyInfoResponse,
+    CompanyInfoUpdate,
     GlobalBusinessConfigResponse,
     GlobalBusinessConfigUpdate,
     GlobalConfigResponse,
@@ -65,6 +67,22 @@ async def update_global_config(
         link_ttl_minutes=config.link_ttl_minutes,
         show_product_photos_in_pdf=config.show_product_photos_in_pdf,
     )
+
+
+@router.get("/company", response_model=CompanyInfoResponse)
+async def get_company_info(uc: ConfigUseCases = Depends(get_config_use_cases)):
+    """Datos públicos de la compañía (catálogo y presupuestos)."""
+    return CompanyInfoResponse(**await uc.get_company_info())
+
+
+@router.put("/company", response_model=CompanyInfoResponse)
+async def update_company_info(
+    body: CompanyInfoUpdate,
+    _: User = Depends(get_current_user),
+    uc: ConfigUseCases = Depends(get_config_use_cases),
+):
+    """Actualiza parcialmente los datos de compañía (solo administrador)."""
+    return CompanyInfoResponse(**await uc.update_company_info(body.model_dump(exclude_none=True)))
 
 
 @router.post("/branding/{key}", response_model=GlobalConfigResponse)
