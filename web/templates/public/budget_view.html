@@ -3,6 +3,14 @@
 {% block navbar %}{% if not is_pdf %}{{ super() }}{% endif %}{% endblock %}
 {% block scripts %}{% if not is_pdf %}{{ super() }}{% endif %}{% endblock %}
 {% block container_class %}{% if is_pdf %}pdf-container{% endif %}{% endblock %}
+{% macro company_block(info, css) %}
+<div class="company-info {{ css }}">
+    {% if info.company_name %}<p class="company-info-name">{{ info.company_name }}</p>{% endif %}
+    {% if info.company_phone %}<p><strong>Tel:</strong> {{ info.company_phone }}</p>{% endif %}
+    {% if info.company_address %}<p><strong>Dirección:</strong> {{ info.company_address }}</p>{% endif %}
+    {% if info.company_ruc %}<p><strong>RUC:</strong> {{ info.company_ruc }}</p>{% endif %}
+</div>
+{% endmacro %}
 {% block content %}
 <div class="budget {% if is_pdf %}pdf-mode{% endif %}">
     <header class="budget-letterhead">
@@ -16,6 +24,9 @@
             {% endif %}
         </div>
     </header>
+    {% if company_info and company_info.position == "header" %}
+    {{ company_block(company_info, "company-info-header") }}
+    {% endif %}
 
     <section class="budget-meta">
         <h2>COTIZACIÓN {{ budget.code }}</h2>
@@ -90,6 +101,12 @@
         <a href="/presupuesto/{{ budget.uuid }}/pdf" class="btn btn-pdf">📄 Descargar PDF</a>
         <a href="{{ whatsapp_url }}" target="_blank" class="btn btn-whatsapp">💬 Compartir por WhatsApp</a>
     </div>
+    {% endif %}
+
+    {% if company_info and company_info.position == "footer" %}
+    <footer class="budget-footer">
+        {{ company_block(company_info, "company-info-footer") }}
+    </footer>
     {% endif %}
 </div>
 {% endblock %}

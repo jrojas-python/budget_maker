@@ -13,6 +13,23 @@ _KEY_ALIASES = {
     _LEGACY_TTL_KEY: "link_ttl_minutes",
 }
 
+_COMPANY_DEFAULTS: dict[str, str | bool] = {
+    "company_name": "",
+    "company_phone": "",
+    "company_address": "",
+    "company_ruc": "",
+    "show_company_info": False,
+    "company_info_position": "footer",
+}
+_COMPANY_DESCRIPTIONS = {
+    "company_name": "Nombre de la compañía",
+    "company_phone": "Teléfono de la compañía",
+    "company_address": "Dirección de la compañía",
+    "company_ruc": "Número fiscal o RUC de la compañía",
+    "show_company_info": "Define si se muestra la información de la compañía",
+    "company_info_position": "Ubicación de la información en catálogo y web (header o footer)",
+}
+
 
 class ConfigRepository:
     """Repositorio para configuración global tipada con compatibilidad legacy."""
@@ -113,6 +130,35 @@ class ConfigRepository:
         config.show_product_photos_in_pdf = show_product_photos_in_pdf
         await config.save()
         return config
+
+    async def get_company_info(self) -> dict[str, str | bool]:
+        """Devuelve datos de compañía con valores por defecto si no existen."""
+        config = await self.get_effective_global_config()
+        return self._company_info_from_config(config)
+
+    async def update_company_info(self, values: dict[str, str | bool]) -> dict[str, str | bool]:
+        """Actualiza parcialmente los datos de compañía en extra_settings."""
+        config = await self.ensure_global_config()
+        for key, value in values.items():
+            if key not in _COMPANY_DEFAULTS:
+                continue
+            config.extra_settings[key] = value
+            config.descriptions.setdefault(key, _COMPANY_DESCRIPTIONS[key])
+        await config.save()
+        return self._company_info_from_config(config)
+
+    @staticmethod
+    def _company_info_from_config(config: GlobalConfig) -> dict[str, str | bool]:
+        result: dict[str, str | bool] = {}
+        for key, default in _COMPANY_DEFAULTS.items():
+            raw = config.extra_settings.get(key, default)
+            if isinstance(default, bool):
+                result[key] = _coerce_bool(raw)
+            else:
+                result[key] = str(raw).strip()
+        if result["company_info_position"] not in {"header", "footer"}:
+            result["company_info_position"] = "footer"
+        return result
 
     async def get_payment_methods(self) -> list[str]:
         config = await self.ensure_global_config()

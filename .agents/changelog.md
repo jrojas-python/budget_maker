@@ -4,6 +4,28 @@ Registro de iteraciones del proyecto.
 
 ---
 
+## [2026-10-05] Iteración 23 — Datos de compañía, footer/header
+
+### Realizado
+- Se agregó `GET/PUT /api/v1/config/company` (GET público, PUT administrador) con nombre, teléfono, dirección, RUC, visibilidad y ubicación (header/footer).
+- La web temporal y el PDF del presupuesto muestran el bloque de compañía (solo campos no vacíos); en PDF siempre al pie.
+- La versión texto (WhatsApp) añade al final el bloque de compañía cuando está visible.
+- Pruebas en `tests/test_company_info.py`; README actualizado.
+- Delegación al `frontend-agent` con `/impeccable` (panel admin, footer/header del catálogo).
+
+### Archivos modificados
+- `app/domain/schemas/global_config.py`
+- `app/infrastructure/repositories/config_repo.py`
+- `app/application/use_cases/config_use_cases.py`
+- `app/application/use_cases/budget_use_cases.py`
+- `app/api/v1/config.py`
+- `web/templates/public/budget_view.html`
+- `web/static/styles.css`
+- `tests/test_company_info.py`
+- `README.md`
+
+---
+
 ## [2026-09-19] Iteración 17 — Gestión de clientes, presupuestos y métricas
 
 ### Realizado

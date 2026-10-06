@@ -56,6 +56,12 @@ class ConfigUseCases:
             show_product_photos_in_pdf=show_product_photos_in_pdf,
         )
 
+    async def get_company_info(self) -> dict[str, str | bool]:
+        return await self._repo.get_company_info()
+
+    async def update_company_info(self, values: dict[str, str | bool]) -> dict[str, str | bool]:
+        return await self._repo.update_company_info(values)
+
     async def seed_defaults(self) -> None:
         """Asegura el documento global tipado y valores auxiliares requeridos."""
         config = await self._repo.ensure_global_config()

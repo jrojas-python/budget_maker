@@ -191,9 +191,12 @@ class BudgetUseCases:
             )
             budget_items.append({"item": item, "image_url": image_url})
 
+        company = self._build_company_info(config, for_pdf=for_pdf)
+
         return {
             "budget": budget,
             "budget_items": budget_items,
+            "company_info": company,
             "show_product_photos_in_pdf": show_photos,
             "site_title": site_title,
             "site_subtitle": site_subtitle,
@@ -220,14 +223,24 @@ class BudgetUseCases:
             company_name = str(config.extra_settings.get("site_title", self._DEFAULT_SITE_TITLE))
         company_name = self._sanitize_site_title(company_name)
 
-        text = "\n".join(
-            [
-                f"Empresa: {company_name}",
-                f"Código: {budget.code}",
-                f"Total: ${budget.total:.2f}",
-                f"Link: {public_budget_url}",
-            ]
-        )
+        lines = [
+            f"Empresa: {company_name}",
+            f"Código: {budget.code}",
+            f"Total: ${budget.total:.2f}",
+            f"Link: {public_budget_url}",
+        ]
+        config = await self._config_repo.get_effective_global_config()
+        company = self._build_company_info(config, for_pdf=True)
+        if company:
+            lines.append("")
+            labels = (
+                ("company_name", "Compañía"),
+                ("company_phone", "Tel"),
+                ("company_address", "Dirección"),
+                ("company_ruc", "RUC"),
+            )
+            lines.extend(f"{label}: {company[key]}" for key, label in labels if key in company)
+        text = "\n".join(lines)
         return f"https://wa.me/?text={urllib.parse.quote(text, safe='')}"
 
     def _generate_code(self) -> str:
@@ -352,6 +365,28 @@ class BudgetUseCases:
                 return file_path.resolve().as_uri()
             return value
         return None
+
+    @staticmethod
+    def _build_company_info(config: Any, *, for_pdf: bool) -> dict[str, Any] | None:
+        """Devuelve solo los campos de compañía no vacíos o None si está oculto/vacío.
+
+        En PDF (y texto) la ubicación siempre es el pie de página.
+        """
+        extra = config.extra_settings
+        raw_visible = extra.get("show_company_info", False)
+        visible = raw_visible if isinstance(raw_visible, bool) else str(raw_visible).strip().lower() in {"1", "true", "yes", "on"}
+        if not visible:
+            return None
+        info: dict[str, Any] = {}
+        for key in ("company_name", "company_phone", "company_address", "company_ruc"):
+            value = str(extra.get(key, "") or "").strip()
+            if value:
+                info[key] = value
+        if not info:
+            return None
+        position = str(extra.get("company_info_position", "footer"))
+        info["position"] = "footer" if for_pdf or position != "header" else "header"
+        return info
 
     def _sanitize_site_title(self, site_title: str) -> str:
         value = str(site_title or "").strip()
