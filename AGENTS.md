@@ -7,8 +7,13 @@ API RESTful para la generación y gestión de presupuestos y cotizaciones de pro
 
 ## Policy
 
-- Desarrollar bajo la metodología **Gitflow** (ramas de feature basadas en `develop`, integradas vía Pull Requests).
-- Definir y mantener flujos de CI/CD mediante **GitHub Actions** para validar pruebas, linter y empaquetado.
+- Desarrollar bajo la metodología **Gitflow** adaptada a JR Distributor:
+  - Rama de trabajo principal: `develop_jrdistributor` (los feats nacen de `develop_jrdistributor`).
+  - Una vez un feat esté 100% desarrollado y probado, se integra en `develop_jrdistributor`.
+  - Rama de producción: `prod_jrdistributor` (hija directa de `develop_jrdistributor`).
+  - Cada push a `develop_jrdistributor` dispara un flujo en **GitHub Actions** que ejecuta tests y genera/actualiza automáticamente un PR hacia `prod_jrdistributor`.
+  - El despliegue continuo de producción en **Render** está sincronizado exclusivamente con `prod_jrdistributor`.
+- Definir y mantener flujos de CI/CD mediante **GitHub Actions** para validar pruebas, linter y PRs automáticos.
 - Actualizar el [README.md](file:///C:/Users/JesusRojas/Documents/pyfiles/budget_maker/README.md) con arquitectura, endpoints y flujo de uso tras realizar cualquier cambio.
 - Registrar cada iteración completada en [.agents/changelog.md](file:///C:/Users/JesusRojas/Documents/pyfiles/budget_maker/.agents/changelog.md) con fecha, descripción y archivos modificados.
 

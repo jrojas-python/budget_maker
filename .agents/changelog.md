@@ -4,6 +4,23 @@ Registro de iteraciones del proyecto.
 
 ---
 
+## [2026-10-12] Iteración 24 — Estrategia de ramas JR Distributor y CI/CD GitHub Actions
+
+### Realizado
+- Creación y publicación de la nueva rama principal de trabajo `develop_jrdistributor` a partir de `develop`.
+- Creación y publicación de la rama de producción `prod_jrdistributor` (hija directa de `develop_jrdistributor`).
+- Configuración del flujo de GitHub Actions en `.github/workflows/auto_pr_production.yml` para ejecutar la suite de pruebas Pytest (con servicio de MongoDB) y generar/actualizar automáticamente un Pull Request hacia `prod_jrdistributor` en cada push a `develop_jrdistributor`.
+- Actualización de políticas de trabajo y Gitflow en `AGENTS.md` y `PRD.md`.
+- Definición de instrucciones para sincronización del servicio en Render con `prod_jrdistributor`.
+
+### Archivos modificados
+- `.github/workflows/auto_pr_production.yml` (nuevo)
+- `AGENTS.md`
+- `PRD.md`
+- `.agents/changelog.md`
+
+---
+
 ## [2026-10-05] Iteración 23 — Datos de compañía, footer/header
 
 ### Realizado

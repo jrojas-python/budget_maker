@@ -1,0 +1,74 @@
+name: CI & Auto PR to Production
+
+on:
+  push:
+    branches:
+      - develop_jrdistributor
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  test:
+    name: Run Pytest Suite
+    runs-on: ubuntu-latest
+    services:
+      mongodb:
+        image: mongo:6.0
+        ports:
+          - 27017:27017
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run Pytest
+        env:
+          MONGODB_URL: mongodb://localhost:27017
+          DATABASE_NAME: budget_maker_test
+        run: |
+          pytest -v
+
+  create-pr:
+    name: Create/Update PR to prod_jrdistributor
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Create or check Pull Request to prod_jrdistributor
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_URL=$(gh pr list --base prod_jrdistributor --head develop_jrdistributor --state open --json url --jq '.[0].url')
+          if [ -z "$PR_URL" ]; then
+            echo "Creando nuevo Pull Request hacia prod_jrdistributor..."
+            gh pr create \
+              --base prod_jrdistributor \
+              --head develop_jrdistributor \
+              --title "release(prod): Sincronización de develop_jrdistributor a prod_jrdistributor" \
+              --body "### Sincronización Automática de Producción
+
+          Este PR fue generado automáticamente por GitHub Actions tras la integración exitosa de cambios en \`develop_jrdistributor\`.
+
+          - **Rama origen:** \`develop_jrdistributor\`
+          - **Rama destino:** \`prod_jrdistributor\`
+          - **Pruebas automatizadas:** Superadas exitosamente en el job de CI.
+
+          Al hacer merge de este PR en \`prod_jrdistributor\`, el servicio en Render desplegará automáticamente la nueva versión en producción."
+          else
+            echo "Ya existe un Pull Request abierto: $PR_URL (se actualizó automáticamente con los nuevos commits)."
+          fi

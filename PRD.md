@@ -44,18 +44,23 @@ Servicio de generación de presupuestos/cotizaciones de productos. API RESTful c
 
 ## Reglas de Trabajo del Agente
 
-1. **Siempre documentar en README.md** — Mantener actualizado con arquitectura, setup, endpoints y flujo de uso.
-2. **Changelog por iteración** — Registrar cada iteración completada en `.agents/changelog.md` con fecha, descripción y archivos afectados.
-3. **Coding style** — Seguir convenciones del skill `coding-style`:
+1. **Estrategia de Ramas JR Distributor**:
+   - Rama base de trabajo: `develop_jrdistributor`. Todo feature (`feature/...`) nace y se integra en `develop_jrdistributor`.
+   - Rama productiva: `prod_jrdistributor`.
+   - Cada integración a `develop_jrdistributor` ejecuta CI y genera/actualiza un PR automático hacia `prod_jrdistributor` vía GitHub Actions.
+   - El despliegue en Render se sincroniza exclusivamente con `prod_jrdistributor`.
+2. **Siempre documentar en README.md** — Mantener actualizado con arquitectura, setup, endpoints y flujo de uso.
+3. **Changelog por iteración** — Registrar cada iteración completada en `.agents/changelog.md` con fecha, descripción y archivos afectados.
+4. **Coding style** — Seguir convenciones del skill `coding-style`:
    - snake_case para variables/funciones
    - Type hints Python 3.10+ (`str | None`, `list[str]`)
    - Logger por módulo: `logger = logging.getLogger(__name__)`
    - Docstrings en español para funciones públicas
    - Imports ordenados: stdlib → terceros → proyecto
-4. **Async end-to-end** — Handlers, repositorios y servicios siempre async.
-5. **Inyección de dependencias** — Vía `FastAPI Depends` para repos y use cases.
-6. **Schemas separados** — Create, Update, Response por cada entidad.
-7. **Errores HTTP uniformes** — HTTPException con códigos consistentes (404, 422, 409, 500).
+5. **Async end-to-end** — Handlers, repositorios y servicios siempre async.
+6. **Inyección de dependencias** — Vía `FastAPI Depends` para repos y use cases.
+7. **Schemas separados** — Create, Update, Response por cada entidad.
+8. **Errores HTTP uniformes** — HTTPException con códigos consistentes (404, 422, 409, 500).
 
 ## Lógica de Negocio Clave
 
