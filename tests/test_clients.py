@@ -60,32 +60,33 @@ async def test_client_crud_search_and_soft_delete(client: AsyncClient, auth_head
 
 
 @pytest.mark.asyncio
-async def test_client_document_is_unique_after_normalization(
+async def test_client_email_is_unique_after_normalization(
     client: AsyncClient,
     auth_headers: dict,
 ):
-    first = await client.post("/api/v1/clients/", json=_client_payload())
+    first = await client.post("/api/v1/clients/", json=_client_payload(email="Ana@Example.Com "))
     assert first.status_code == 201
+    assert first.json()["email"] == "ana@example.com"
 
     duplicate = await client.post(
         "/api/v1/clients/",
-        json=_client_payload(nombres="Otra", documento="AB123"),
+        json=_client_payload(nombres="Otra", email="ana@example.com"),
     )
     assert duplicate.status_code == 409
 
 
 @pytest.mark.asyncio
-async def test_multiple_clients_without_document_are_allowed(
+async def test_multiple_clients_without_email_are_allowed(
     client: AsyncClient,
     auth_headers: dict,
 ):
     first = await client.post(
         "/api/v1/clients/",
-        json={"nombres": "Ana", "documento": ""},
+        json={"nombres": "Ana", "email": ""},
     )
     second = await client.post(
         "/api/v1/clients/",
-        json={"nombres": "Beatriz", "documento": ""},
+        json={"nombres": "Beatriz", "email": ""},
     )
     assert first.status_code == 201
     assert second.status_code == 201
@@ -93,27 +94,27 @@ async def test_multiple_clients_without_document_are_allowed(
 
 
 @pytest.mark.asyncio
-async def test_client_document_can_be_cleared_when_other_empty_documents_exist(
+async def test_client_email_can_be_cleared_when_other_empty_emails_exist(
     client: AsyncClient,
     auth_headers: dict,
 ):
-    with_document = await client.post(
+    with_email = await client.post(
         "/api/v1/clients/",
-        json={"nombres": "Ana", "documento": "A-1"},
+        json={"nombres": "Ana", "email": "a-1@example.com"},
     )
-    without_document = await client.post(
+    without_email = await client.post(
         "/api/v1/clients/",
-        json={"nombres": "Beatriz", "documento": ""},
+        json={"nombres": "Beatriz", "email": ""},
     )
-    assert with_document.status_code == 201
-    assert without_document.status_code == 201
+    assert with_email.status_code == 201
+    assert without_email.status_code == 201
 
     updated = await client.put(
-        f"/api/v1/clients/{with_document.json()['id']}",
-        json={"documento": ""},
+        f"/api/v1/clients/{with_email.json()['id']}",
+        json={"email": ""},
     )
     assert updated.status_code == 200
-    assert updated.json()["documento"] == ""
+    assert updated.json()["email"] == ""
 
 
 @pytest.mark.asyncio

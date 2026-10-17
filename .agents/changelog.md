@@ -4,6 +4,52 @@ Registro de iteraciones del proyecto.
 
 ---
 
+## [2026-10-17] Iteración 25 — Llave de cliente por correo electrónico (email) y eliminación de documento/compañía
+
+### Realizado
+- Se reemplazó el campo `documento` por `email` (opcional y normalizado en minúsculas) como la llave de relación de presupuestos y persistencia de clientes reutilizables.
+- Se actualizó el modelo `Client` en MongoDB cambiando el índice único parcial de `uq_client_documento_non_empty` a `uq_client_email_non_empty`.
+- Se incorporaron métodos `get_by_email` y `upsert_by_email` en `ClientRepository`, y validación de duplicados por email en `ClientUseCases`.
+- En `BudgetUseCases._resolve_client_snapshot`, se asocian presupuestos a clientes cuando se ingresa email; si el email está vacío, el presupuesto se crea sin cliente registrado (`client_id = None`).
+- Se removieron los campos de `Documento` y `Compañía` del render de presupuesto HTML/PDF (`web/templates/public/budget_view.html`) y del catálogo de muestra.
+- Se actualizó el script de migración y normalización `scripts/backfill_budget_clients.py` para reasociar cotizaciones pasadas por email y actualizar índices de base de datos.
+- Se actualizaron las pruebas unitarias y de integración en `tests/`.
+
+### Archivos modificados
+- `AGENTS.md`
+- `app/domain/models/client.py`
+- `app/infrastructure/repositories/client_repo.py`
+- `app/application/use_cases/client_use_cases.py`
+- `app/application/use_cases/budget_use_cases.py`
+- `web/templates/public/budget_view.html`
+- `web/templates/public/catalog.html`
+- `web/static/js/catalog.js`
+- `scripts/backfill_budget_clients.py`
+- `tests/test_backfill_budget_clients.py`
+- `tests/test_clients.py`
+- `tests/test_budgets.py`
+- `tests/test_dashboard.py`
+- `.agents/changelog.md`
+
+---
+
+## [2026-10-12] Iteración 24 — Estrategia de ramas JR Distributor y CI/CD GitHub Actions
+
+### Realizado
+- Creación y publicación de la nueva rama principal de trabajo `develop_jrdistributor` a partir de `develop`.
+- Creación y publicación de la rama de producción `prod_jrdistributor` (hija directa de `develop_jrdistributor`).
+- Configuración del flujo de GitHub Actions en `.github/workflows/auto_pr_production.yml` para ejecutar la suite de pruebas Pytest (con servicio de MongoDB) y generar/actualizar automáticamente un Pull Request hacia `prod_jrdistributor` en cada push a `develop_jrdistributor`.
+- Actualización de políticas de trabajo y Gitflow en `AGENTS.md` y `PRD.md`.
+- Definición de instrucciones para sincronización del servicio en Render con `prod_jrdistributor`.
+
+### Archivos modificados
+- `.github/workflows/auto_pr_production.yml` (nuevo)
+- `AGENTS.md`
+- `PRD.md`
+- `.agents/changelog.md`
+
+---
+
 ## [2026-10-05] Iteración 23 — Datos de compañía, footer/header
 
 ### Realizado

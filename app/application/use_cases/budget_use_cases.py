@@ -319,17 +319,17 @@ class BudgetUseCases:
         }
         if not snapshot_data["nombres"]:
             raise ValueError("nombres es obligatorio")
-        documento = "".join(snapshot_data["documento"].split()).upper()
-        snapshot_data["documento"] = documento
-        if not documento:
+        email = snapshot_data["email"].strip().lower()
+        snapshot_data["email"] = email
+        if not email:
             return None, ClientInfo(**snapshot_data)
 
-        client = await self._client_repo.upsert_by_documento(
+        client = await self._client_repo.upsert_by_email(
             {
                 "nombres": snapshot_data["nombres"],
                 "apellidos": snapshot_data["apellidos"],
-                "email": snapshot_data["email"],
-                "documento": documento,
+                "email": email,
+                "documento": snapshot_data["documento"],
                 "compania": snapshot_data["compania"],
                 "direccion": snapshot_data["direccion"],
                 "observaciones": snapshot_data["observaciones"],

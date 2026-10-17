@@ -25,9 +25,10 @@ class Client(Document):
         name = "clients"
         indexes = [
             IndexModel(
-                [("documento", 1)],
-                name="uq_client_documento_non_empty",
+                [("email", 1)],
+                name="uq_client_email_non_empty",
                 unique=True,
-                partialFilterExpression={"documento": {"$type": "string", "$gt": ""}},
+                partialFilterExpression={"email": {"$type": "string", "$gt": ""}},
             ),
         ]
+

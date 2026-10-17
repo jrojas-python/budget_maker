@@ -258,7 +258,7 @@ async function createBudget() {
         client_info: {
             nombres,
             apellidos,
-            documento: document.getElementById('c-documento').value.trim(),
+            email: document.getElementById('c-email')?.value.trim() || '',
             direccion: document.getElementById('c-direccion').value.trim(),
             vendedor: document.getElementById('c-vendedor').value.trim(),
         },
@@ -284,7 +284,9 @@ async function createBudget() {
         document.getElementById('modal-date').textContent = fecha.toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
         document.getElementById('modal-client-name').textContent = b.client_info.nombres + ' ' + b.client_info.apellidos;
-        document.getElementById('modal-client-doc').textContent = b.client_info.documento || '—';
+        if (document.getElementById('modal-client-email')) {
+            document.getElementById('modal-client-email').textContent = b.client_info.email || '—';
+        }
         document.getElementById('modal-client-dir').textContent = b.client_info.direccion || '—';
         document.getElementById('modal-client-vendor').textContent = b.client_info.vendedor || '—';
 

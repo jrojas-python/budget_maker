@@ -15,9 +15,9 @@ async def _create_product(client: AsyncClient, auth_headers: dict) -> None:
     assert response.status_code == 201
 
 
-def _payload(nombres: str, documento: str, quantity: int, payment_method: str | None) -> dict:
+def _payload(nombres: str, email: str, quantity: int, payment_method: str | None) -> dict:
     return {
-        "client_info": {"nombres": nombres, "documento": documento},
+        "client_info": {"nombres": nombres, "email": email},
         "items": [{"sku": "MET-001", "quantity": quantity}],
         "payment_method": payment_method,
     }
@@ -45,15 +45,15 @@ async def test_dashboard_metrics_cover_utc_series_clients_products_and_payments(
 
     first = await client.post(
         "/api/v1/budgets/",
-        json=_payload("Ana", "A-1", 1, "Efectivo"),
+        json=_payload("Ana", "ana@example.com", 1, "Efectivo"),
     )
     second = await client.post(
         "/api/v1/budgets/",
-        json=_payload("Ana Actualizada", "A-1", 2, None),
+        json=_payload("Ana Actualizada", "ana@example.com", 2, None),
     )
     anonymous = await client.post(
         "/api/v1/budgets/",
-        json=_payload("Sin documento", "", 1, None),
+        json=_payload("Sin email", "", 1, None),
     )
     assert first.status_code == second.status_code == anonymous.status_code == 201
 

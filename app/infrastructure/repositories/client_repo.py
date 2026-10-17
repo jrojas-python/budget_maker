@@ -26,6 +26,17 @@ class ClientRepository:
         except (TypeError, ValueError):
             return None
 
+    async def get_by_email(
+        self,
+        email: str,
+        *,
+        active_only: bool = False,
+    ) -> Client | None:
+        query: dict[str, Any] = {"email": email.strip().lower()}
+        if active_only:
+            query["is_active"] = True
+        return await Client.find_one(query)
+
     async def get_by_documento(
         self,
         documento: str,
@@ -54,8 +65,8 @@ class ClientRepository:
                 {"nombres": regex_filter},
                 {"apellidos": regex_filter},
                 {"email": regex_filter},
-                {"documento": regex_filter},
-                {"compania": regex_filter},
+                {"direccion": regex_filter},
+                {"observaciones": regex_filter},
             ]
 
         find_query = Client.find(query)
@@ -69,11 +80,13 @@ class ClientRepository:
         return items, total
 
     async def create(self, data: dict[str, Any]) -> Client:
+        if "email" in data and isinstance(data["email"], str):
+            data["email"] = data["email"].strip().lower()
         client = Client(**data)
         try:
             await client.insert()
         except DuplicateKeyError as exc:
-            raise ValueError("Ya existe un cliente con ese documento") from exc
+            raise ValueError("Ya existe un cliente con ese correo electrónico") from exc
         logger.info("Cliente creado: %s", client.id)
         return client
 
@@ -81,11 +94,13 @@ class ClientRepository:
         client = await self.get_by_id(client_id)
         if not client:
             return None
+        if "email" in data and isinstance(data["email"], str):
+            data["email"] = data["email"].strip().lower()
         data["updated_at"] = datetime.now(timezone.utc)
         try:
             await client.set(data)
         except DuplicateKeyError as exc:
-            raise ValueError("Ya existe un cliente con ese documento") from exc
+            raise ValueError("Ya existe un cliente con ese correo electrónico") from exc
         return await self.get_by_id(client_id)
 
     async def soft_delete(self, client_id: str) -> bool:
@@ -95,13 +110,47 @@ class ClientRepository:
         await client.set({"is_active": False, "updated_at": datetime.now(timezone.utc)})
         return True
 
+    async def upsert_by_email(
+        self,
+        data: dict[str, Any],
+        *,
+        update_fields: set[str] | None = None,
+    ) -> Client:
+        email = str(data.get("email", "")).strip().lower()
+        data["email"] = email
+        if not email:
+            raise ValueError("email es obligatorio para upsert_by_email")
+        existing = await self.get_by_email(email)
+        if existing:
+            if update_fields is None:
+                update_data = {
+                    key: value
+                    for key, value in data.items()
+                    if key != "email" and (not isinstance(value, str) or value)
+                }
+            else:
+                update_data = {
+                    key: data[key]
+                    for key in update_fields
+                    if key in data and key != "email"
+                }
+            if not existing.is_active:
+                update_data["is_active"] = True
+            if not update_data:
+                return existing
+            updated = await self.update(str(existing.id), update_data)
+            if updated is None:
+                raise RuntimeError("No se pudo actualizar el cliente")
+            return updated
+        return await self.create(data)
+
     async def upsert_by_documento(
         self,
         data: dict[str, Any],
         *,
         update_fields: set[str] | None = None,
     ) -> Client:
-        documento = str(data["documento"])
+        documento = str(data.get("documento", ""))
         existing = await self.get_by_documento(documento)
         if existing:
             if update_fields is None:
