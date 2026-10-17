@@ -14,6 +14,7 @@ if str(project_root) not in sys.path:
 
 from app.database import close_db, init_db
 from app.domain.models.budget import Budget
+from app.domain.models.client import Client
 from app.infrastructure.repositories.client_repo import ClientRepository
 
 
