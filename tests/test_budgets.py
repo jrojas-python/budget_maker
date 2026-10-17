@@ -22,6 +22,7 @@ def _budget_payload() -> dict:
         "client_info": {
             "nombres": "Ana",
             "apellidos": "Rojas",
+            "email": "ana@example.com",
             "documento": "12345678",
             "direccion": "Calle 1",
             "vendedor": "Luis",
@@ -942,7 +943,7 @@ async def test_budget_with_only_name_does_not_create_client(
 
     await _create_product(client, auth_headers)
     payload = _budget_payload()
-    payload["client_info"] = {"nombres": "Cliente sin documento"}
+    payload["client_info"] = {"nombres": "Cliente sin email", "email": ""}
 
     created = await client.post("/api/v1/budgets/", json=payload)
     assert created.status_code == 201
@@ -956,17 +957,19 @@ async def test_budget_with_only_name_does_not_create_client(
     assert admin.json()["client_id"] is None
     html = await client.get(f"/presupuesto/{budget['uuid']}")
     assert html.status_code == 200
-    assert "Cliente sin documento" in html.text
+    assert "Cliente sin email" in html.text
+    assert "Documento:" not in html.text
+    assert "Compañía:" not in html.text
 
 
 @pytest.mark.asyncio
-async def test_budget_upserts_client_by_document_and_keeps_old_snapshot(
+async def test_budget_upserts_client_by_email_and_keeps_old_snapshot(
     client: AsyncClient,
     auth_headers: dict,
 ):
     await _create_product(client, auth_headers)
     first_payload = _budget_payload()
-    first_payload["client_info"]["compania"] = "Empresa Original"
+    first_payload["client_info"]["direccion"] = "Dirección Original"
     first = await client.post("/api/v1/budgets/", json=first_payload)
     assert first.status_code == 201
     first_budget = first.json()
@@ -976,24 +979,24 @@ async def test_budget_upserts_client_by_document_and_keeps_old_snapshot(
 
     client_update = await client.put(
         f"/api/v1/clients/{client_id}",
-        json={"compania": "Empresa Editada"},
+        json={"direccion": "Dirección Editada"},
     )
     assert client_update.status_code == 200
     old_snapshot = await client.get(f"/api/v1/budgets/{first_budget['uuid']}")
-    assert old_snapshot.json()["client_info"]["compania"] == "Empresa Original"
+    assert old_snapshot.json()["client_info"]["direccion"] == "Dirección Original"
 
     second_payload = _budget_payload()
     second_payload["client_info"].update(
-        {"documento": " 1234 5678 ", "compania": "Empresa Más Reciente"}
+        {"email": " ANA@EXAMPLE.COM ", "direccion": "Dirección Más Reciente"}
     )
     second = await client.post("/api/v1/budgets/", json=second_payload)
     assert second.status_code == 201
     second_admin = await client.get(f"/api/v1/budgets/{second.json()['uuid']}/admin")
     assert second_admin.json()["client_id"] == client_id
-    assert second.json()["client_info"]["compania"] == "Empresa Más Reciente"
+    assert second.json()["client_info"]["direccion"] == "Dirección Más Reciente"
 
     old_snapshot_again = await client.get(f"/api/v1/budgets/{first_budget['uuid']}")
-    assert old_snapshot_again.json()["client_info"]["compania"] == "Empresa Original"
+    assert old_snapshot_again.json()["client_info"]["direccion"] == "Dirección Original"
 
 
 @pytest.mark.asyncio
@@ -1004,20 +1007,20 @@ async def test_sparse_budget_does_not_clear_existing_client_fields(
     await _create_product(client, auth_headers)
     first_payload = _budget_payload()
     first_payload["client_info"].update(
-        {"email": "cliente@example.com", "compania": "Empresa Vigente"}
+        {"email": "cliente@example.com", "direccion": "Dirección Vigente"}
     )
     first = await client.post("/api/v1/budgets/", json=first_payload)
     assert first.status_code == 201
 
     sparse_payload = {
-        "client_info": {"nombres": "Cliente", "documento": "12345678"},
+        "client_info": {"nombres": "Cliente", "email": "cliente@example.com"},
         "items": [{"sku": "BGT-001", "quantity": 1}],
     }
     second = await client.post("/api/v1/budgets/", json=sparse_payload)
 
     assert second.status_code == 201
     assert second.json()["client_info"]["email"] == "cliente@example.com"
-    assert second.json()["client_info"]["compania"] == "Empresa Vigente"
+    assert second.json()["client_info"]["direccion"] == "Dirección Vigente"
 
 
 @pytest.mark.asyncio
@@ -1082,7 +1085,7 @@ async def test_budget_admin_filters_paginates_and_deletes_physically(
     first = await client.post("/api/v1/budgets/", json=_budget_payload())
     second_payload = _budget_payload()
     second_payload["client_info"].update(
-        {"nombres": "Beatriz", "documento": "999", "compania": "Beta"}
+        {"nombres": "Beatriz", "email": "beatriz@example.com", "documento": "999", "compania": "Beta"}
     )
     second = await client.post("/api/v1/budgets/", json=second_payload)
     assert first.status_code == second.status_code == 201

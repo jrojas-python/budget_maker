@@ -4,6 +4,35 @@ Registro de iteraciones del proyecto.
 
 ---
 
+## [2026-10-17] Iteración 25 — Llave de cliente por correo electrónico (email) y eliminación de documento/compañía
+
+### Realizado
+- Se reemplazó el campo `documento` por `email` (opcional y normalizado en minúsculas) como la llave de relación de presupuestos y persistencia de clientes reutilizables.
+- Se actualizó el modelo `Client` en MongoDB cambiando el índice único parcial de `uq_client_documento_non_empty` a `uq_client_email_non_empty`.
+- Se incorporaron métodos `get_by_email` y `upsert_by_email` en `ClientRepository`, y validación de duplicados por email en `ClientUseCases`.
+- En `BudgetUseCases._resolve_client_snapshot`, se asocian presupuestos a clientes cuando se ingresa email; si el email está vacío, el presupuesto se crea sin cliente registrado (`client_id = None`).
+- Se removieron los campos de `Documento` y `Compañía` del render de presupuesto HTML/PDF (`web/templates/public/budget_view.html`) y del catálogo de muestra.
+- Se actualizó el script de migración y normalización `scripts/backfill_budget_clients.py` para reasociar cotizaciones pasadas por email y actualizar índices de base de datos.
+- Se actualizaron las pruebas unitarias y de integración en `tests/`.
+
+### Archivos modificados
+- `AGENTS.md`
+- `app/domain/models/client.py`
+- `app/infrastructure/repositories/client_repo.py`
+- `app/application/use_cases/client_use_cases.py`
+- `app/application/use_cases/budget_use_cases.py`
+- `web/templates/public/budget_view.html`
+- `web/templates/public/catalog.html`
+- `web/static/js/catalog.js`
+- `scripts/backfill_budget_clients.py`
+- `tests/test_backfill_budget_clients.py`
+- `tests/test_clients.py`
+- `tests/test_budgets.py`
+- `tests/test_dashboard.py`
+- `.agents/changelog.md`
+
+---
+
 ## [2026-10-12] Iteración 24 — Estrategia de ramas JR Distributor y CI/CD GitHub Actions
 
 ### Realizado

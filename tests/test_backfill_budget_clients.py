@@ -13,13 +13,13 @@ async def _create_budget(
     *,
     uuid: str,
     nombres: str,
-    documento: str,
+    email: str,
     created_at: datetime,
 ) -> Budget:
     budget = Budget(
         code=f"BM-20260919-{uuid[-4:]}",
         uuid=uuid,
-        client_info=ClientInfo(nombres=nombres, documento=documento),
+        client_info=ClientInfo(nombres=nombres, email=email),
         items=[],
         created_at=created_at,
     )
@@ -33,19 +33,19 @@ async def test_backfill_is_dry_run_safe_and_idempotent():
     first = await _create_budget(
         uuid="00000000-0000-4000-8000-000000000001",
         nombres="Cliente inicial",
-        documento=" ab 123 ",
+        email=" cliente@demo.com ",
         created_at=now - timedelta(days=2),
     )
     latest = await _create_budget(
         uuid="00000000-0000-4000-8000-000000000002",
         nombres="Cliente actualizado",
-        documento="AB123",
+        email="cliente@demo.com",
         created_at=now - timedelta(days=1),
     )
     anonymous = await _create_budget(
         uuid="00000000-0000-4000-8000-000000000003",
-        nombres="Sin documento",
-        documento="",
+        nombres="Sin email",
+        email="",
         created_at=now,
     )
     original_snapshots = {
@@ -57,7 +57,7 @@ async def test_backfill_is_dry_run_safe_and_idempotent():
     assert preview == {
         "processed": 3,
         "associated": 2,
-        "without_document": 1,
+        "without_email": 1,
         "clients_created": 1,
     }
     assert await Client.find_all().count() == 0
@@ -70,7 +70,7 @@ async def test_backfill_is_dry_run_safe_and_idempotent():
     assert first_run == preview
     assert await Client.find_all().count() == 1
 
-    client = await Client.find_one(Client.documento == "AB123")
+    client = await Client.find_one(Client.email == "cliente@demo.com")
     assert client is not None
     assert client.nombres == "Cliente actualizado"
     original_updated_at = client.updated_at
@@ -88,8 +88,9 @@ async def test_backfill_is_dry_run_safe_and_idempotent():
     assert second_run["processed"] == 3
     assert second_run["associated"] == 0
     assert second_run["clients_created"] == 0
-    assert second_run["without_document"] == 1
+    assert second_run["without_email"] == 1
     assert await Client.find_all().count() == 1
-    unchanged_client = await Client.find_one(Client.documento == "AB123")
+    unchanged_client = await Client.find_one(Client.email == "cliente@demo.com")
     assert unchanged_client is not None
     assert unchanged_client.updated_at == original_updated_at
+

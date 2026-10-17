@@ -9,6 +9,7 @@ API RESTful para la generación y gestión de presupuestos y cotizaciones de pro
 
 - Desarrollar bajo la metodología **Gitflow** adaptada a JR Distributor:
   - Rama de trabajo principal: `develop_jrdistributor` (los feats nacen de `develop_jrdistributor`).
+  - Nomenclatura de ramas feature: `feature/[NOMBRE_CLIENTE]/[NOMBRE_FEAT]` (e.g. `feature/jrdistributor/email-client-key`).
   - Una vez un feat esté 100% desarrollado y probado, se integra en `develop_jrdistributor`.
   - Rama de producción: `prod_jrdistributor` (hija directa de `develop_jrdistributor`).
   - Cada push a `develop_jrdistributor` dispara un flujo en **GitHub Actions** que ejecuta tests y genera/actualiza automáticamente un PR hacia `prod_jrdistributor`.

@@ -31,9 +31,10 @@ class ClientUseCases:
 
     async def create(self, data: ClientCreate) -> Client:
         client_data = data.model_dump()
-        client_data["documento"] = self.normalize_documento(client_data["documento"])
-        if client_data["documento"] and await self._repo.get_by_documento(client_data["documento"]):
-            raise ValueError("Ya existe un cliente con ese documento")
+        client_data["email"] = self.normalize_email(client_data.get("email") or "")
+        client_data["documento"] = self.normalize_documento(client_data.get("documento") or "")
+        if client_data["email"] and await self._repo.get_by_email(client_data["email"]):
+            raise ValueError("Ya existe un cliente con ese correo electrónico")
         return await self._repo.create(client_data)
 
     async def update(self, client_id: str, data: ClientUpdate) -> Client | None:
@@ -42,12 +43,14 @@ class ClientUseCases:
             return None
 
         update_data = data.model_dump(exclude_unset=True)
+        if "email" in update_data:
+            update_data["email"] = self.normalize_email(update_data["email"] or "")
+            if update_data["email"]:
+                duplicate = await self._repo.get_by_email(update_data["email"])
+                if duplicate and str(duplicate.id) != client_id:
+                    raise ValueError("Ya existe un cliente con ese correo electrónico")
         if "documento" in update_data:
             update_data["documento"] = self.normalize_documento(update_data["documento"] or "")
-            if update_data["documento"]:
-                duplicate = await self._repo.get_by_documento(update_data["documento"])
-                if duplicate and str(duplicate.id) != client_id:
-                    raise ValueError("Ya existe un cliente con ese documento")
         if not update_data:
             return existing
         return await self._repo.update(client_id, update_data)
@@ -56,5 +59,10 @@ class ClientUseCases:
         return await self._repo.soft_delete(client_id)
 
     @staticmethod
+    def normalize_email(email: str) -> str:
+        return email.strip().lower()
+
+    @staticmethod
     def normalize_documento(documento: str) -> str:
         return "".join(documento.split()).upper()
+
